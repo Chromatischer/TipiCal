@@ -76,22 +76,34 @@ func (ec *EventCard) View() string {
 }
 
 // EventDot renders a compact inline event indicator for month view cells.
-func EventDot(theme *config.Theme, event *ical.Event, maxWidth int, use24h bool) string {
+// bg is an optional background color; pass "" to use no background.
+func EventDot(theme *config.Theme, event *ical.Event, maxWidth int, use24h bool, bg ...lipgloss.Color) string {
 	color := lipgloss.Color(event.Color)
 	if event.Color == "" {
 		color = theme.CalendarColor(event.CalendarID)
 	}
 
-	dot := lipgloss.NewStyle().Foreground(color).Render("●")
+	dotStyle := lipgloss.NewStyle().Foreground(color)
+	timeStyle := lipgloss.NewStyle().Foreground(theme.TextMuted)
+	titleStyle := lipgloss.NewStyle().Foreground(theme.Text)
+
+	if len(bg) > 0 && bg[0] != "" {
+		dotStyle = dotStyle.Background(bg[0])
+		timeStyle = timeStyle.Background(bg[0])
+		titleStyle = titleStyle.Background(bg[0])
+	}
+
+	dot := dotStyle.Render("●")
 
 	timeStr := util.FormatTime(event.Start, use24h)
 	title := util.TruncateText(event.Summary, maxWidth-len(timeStr)-3)
 
-	return fmt.Sprintf("%s %s %s",
-		dot,
-		lipgloss.NewStyle().Foreground(theme.TextMuted).Render(timeStr),
-		lipgloss.NewStyle().Foreground(theme.Text).Render(title),
-	)
+	sep := " "
+	if len(bg) > 0 && bg[0] != "" {
+		sep = lipgloss.NewStyle().Background(bg[0]).Render(" ")
+	}
+
+	return dot + sep + timeStyle.Render(timeStr) + sep + titleStyle.Render(title)
 }
 
 // EventBlock renders an event as a colored block for time grid views.

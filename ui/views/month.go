@@ -115,12 +115,12 @@ func (mv *MonthView) View() string {
 	grid := util.MonthGrid(mv.year, mv.month, mv.startMonday)
 	now := time.Now()
 
-	colWidth := (mv.width - 2) / 7
-	if colWidth < 12 {
-		colWidth = 12
+	colWidth := mv.width/7 - 2
+	if colWidth < 10 {
+		colWidth = 10
 	}
 
-	cellHeight := (mv.height - 4) / 6 // 6 rows, minus header
+	cellHeight := (mv.height-4)/6 - 2 // 6 rows, minus header; subtract 2 for borders
 	if cellHeight < 3 {
 		cellHeight = 3
 	}
@@ -138,7 +138,7 @@ func (mv *MonthView) View() string {
 	var headerCells []string
 	for _, name := range dayNames {
 		cell := lipgloss.NewStyle().
-			Width(colWidth).
+			Width(colWidth + 2). // match cell width including borders
 			Align(lipgloss.Center).
 			Foreground(mv.theme.TextMuted).
 			Bold(true).
@@ -148,9 +148,10 @@ func (mv *MonthView) View() string {
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, headerCells...))
 
 	// Separator
+	totalWidth := 7 * (colWidth + 2) // each cell adds 2 for borders
 	sep := lipgloss.NewStyle().
 		Foreground(mv.theme.Border).
-		Render(strings.Repeat("─", mv.width-2))
+		Render(strings.Repeat("─", totalWidth))
 	lines = append(lines, sep)
 
 	// Day cells
@@ -173,6 +174,12 @@ func (mv *MonthView) renderDayCell(day, now time.Time, width, height int) string
 	isSelected := util.SameDay(day, mv.selectedDay)
 	isOtherMonth := day.Month() != mv.month
 
+	// Determine cell background color for selected cells
+	var cellBg lipgloss.Color
+	if isSelected {
+		cellBg = mv.theme.SurfaceAlt
+	}
+
 	// Day number
 	numStr := fmt.Sprintf("%d", day.Day())
 	numStyle := lipgloss.NewStyle()
@@ -183,6 +190,10 @@ func (mv *MonthView) renderDayCell(day, now time.Time, width, height int) string
 		numStyle = numStyle.Foreground(mv.theme.TextFaint)
 	} else {
 		numStyle = numStyle.Foreground(mv.theme.Text)
+	}
+
+	if cellBg != "" {
+		numStyle = numStyle.Background(cellBg)
 	}
 
 	// Events for this day
@@ -208,12 +219,15 @@ func (mv *MonthView) renderDayCell(day, now time.Time, width, height int) string
 		if i >= maxEvents {
 			remaining := len(events) - maxEvents
 			moreStr := fmt.Sprintf("+%d more", remaining)
-			cellLines = append(cellLines, lipgloss.NewStyle().
-				Foreground(mv.theme.TextFaint).
-				Render(moreStr))
+			moreStyle := lipgloss.NewStyle().
+				Foreground(mv.theme.TextFaint)
+			if cellBg != "" {
+				moreStyle = moreStyle.Background(cellBg)
+			}
+			cellLines = append(cellLines, moreStyle.Render(moreStr))
 			break
 		}
-		cellLines = append(cellLines, components.EventDot(mv.theme, e, eventWidth, mv.use24h))
+		cellLines = append(cellLines, components.EventDot(mv.theme, e, eventWidth, mv.use24h, cellBg))
 	}
 
 	// Pad to height

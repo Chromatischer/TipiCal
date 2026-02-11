@@ -376,12 +376,14 @@ func (a *App) syncDateToHeader() {
 
 func (a *App) updateLayout() {
 	sidebarWidth := 0
+	sidebarRenderedWidth := 0 // includes border
 	if a.showSidebar {
 		sidebarWidth = 24
+		sidebarRenderedWidth = 25 // 24 content + 1 right border
 	}
 
-	contentWidth := a.width - sidebarWidth
-	contentHeight := a.height - 3 // header + statusbar
+	contentWidth := a.width - sidebarRenderedWidth
+	contentHeight := a.height - 4 // header (1 line + border) + statusbar (border + 1 line)
 
 	a.header.SetWidth(a.width)
 	a.statusbar.SetWidth(a.width)

@@ -138,11 +138,14 @@ func (s *Search) View() string {
 	// Search input
 	promptStyle := lipgloss.NewStyle().
 		Foreground(s.theme.Accent).
+		Background(s.theme.Surface).
 		Bold(true)
 	inputStyle := lipgloss.NewStyle().
-		Foreground(s.theme.Text)
+		Foreground(s.theme.Text).
+		Background(s.theme.Surface)
 
-	prompt := promptStyle.Render(" /") + " " + inputStyle.Render(s.query+"█")
+	surfaceSep := lipgloss.NewStyle().Background(s.theme.Surface).Render(" ")
+	prompt := promptStyle.Render(" /") + surfaceSep + inputStyle.Render(s.query+"█")
 
 	inputBar := lipgloss.NewStyle().
 		Width(searchWidth).
@@ -187,7 +190,11 @@ func (s *Search) View() string {
 			color = s.theme.CalendarColor(event.CalendarID)
 		}
 
-		dot := lipgloss.NewStyle().Foreground(color).Render("●")
+		dotStyle := lipgloss.NewStyle().Foreground(color)
+		if isSelected {
+			dotStyle = dotStyle.Background(s.theme.SurfaceAlt)
+		}
+		dot := dotStyle.Render("●")
 
 		// Date
 		var dateStr string
@@ -211,13 +218,20 @@ func (s *Search) View() string {
 		timeStyle := lipgloss.NewStyle().Foreground(s.theme.TextFaint).Width(6)
 		titleStyle := lipgloss.NewStyle().Foreground(s.theme.Text)
 		if isSelected {
-			titleStyle = titleStyle.Bold(true)
+			dateStyle = dateStyle.Background(s.theme.SurfaceAlt)
+			timeStyle = timeStyle.Background(s.theme.SurfaceAlt)
+			titleStyle = titleStyle.Background(s.theme.SurfaceAlt).Bold(true)
+		}
+
+		sep := " "
+		if isSelected {
+			sep = lipgloss.NewStyle().Background(s.theme.SurfaceAlt).Render(" ")
 		}
 
 		line := style.Render(
-			dot + " " +
+			dot + sep +
 				dateStyle.Render(dateStr) +
-				timeStyle.Render(timeStr) + " " +
+				timeStyle.Render(timeStr) + sep +
 				titleStyle.Render(title),
 		)
 		lines = append(lines, line)

@@ -62,7 +62,11 @@ func (tg *TimeGrid) ScrollUp() {
 
 // ScrollDown scrolls the time grid down.
 func (tg *TimeGrid) ScrollDown() {
-	maxScroll := (tg.endHour - tg.startHour) - tg.height/2
+	visibleHours := tg.height - 4
+	if visibleHours < 1 {
+		visibleHours = 1
+	}
+	maxScroll := (tg.endHour - tg.startHour) - visibleHours
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
@@ -176,7 +180,14 @@ func (tg *TimeGrid) View() string {
 		}
 	}
 
-	return strings.Join(lines, "\n")
+	result := strings.Join(lines, "\n")
+
+	// Pad/clip output to exactly fill the available height
+	return lipgloss.NewStyle().
+		Width(tg.width).
+		Height(tg.height).
+		MaxHeight(tg.height).
+		Render(result)
 }
 
 func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event, width int) string {
