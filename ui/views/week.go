@@ -42,6 +42,8 @@ func (wv *WeekView) rebuildGrid() {
 		days[i] = weekStart.AddDate(0, 0, i)
 	}
 	wv.grid = components.NewTimeGrid(wv.theme, days, wv.store, wv.use24h)
+	wv.grid.SetSelected(wv.selectedDay)
+	wv.grid.ResetEventSelection()
 	if wv.width > 0 && wv.height > 0 {
 		wv.grid.SetSize(wv.width, wv.height)
 	}
@@ -79,14 +81,14 @@ func (wv *WeekView) PrevPeriod() {
 	wv.rebuildGrid()
 }
 
-// MoveUp scrolls up.
+// MoveUp selects the previous event on the selected day.
 func (wv *WeekView) MoveUp() {
-	wv.grid.ScrollUp()
+	wv.grid.SelectPrevEvent()
 }
 
-// MoveDown scrolls down.
+// MoveDown selects the next event on the selected day.
 func (wv *WeekView) MoveDown() {
-	wv.grid.ScrollDown()
+	wv.grid.SelectNextEvent()
 }
 
 // MoveLeft moves to previous day.
@@ -107,4 +109,12 @@ func (wv *WeekView) View() string {
 		return ""
 	}
 	return wv.grid.View()
+}
+
+// SelectedEvent returns the currently selected event, or nil.
+func (wv *WeekView) SelectedEvent() *ical.Event {
+	if wv.grid == nil {
+		return nil
+	}
+	return wv.grid.SelectedEvent()
 }

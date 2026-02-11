@@ -38,6 +38,8 @@ func (td *ThreeDayView) rebuildGrid() {
 	days[1] = td.selectedDay                   // today
 	days[2] = td.selectedDay.AddDate(0, 0, 1)  // tomorrow
 	td.grid = components.NewTimeGrid(td.theme, days, td.store, td.use24h)
+	td.grid.SetSelected(td.selectedDay)
+	td.grid.ResetEventSelection()
 	if td.width > 0 && td.height > 0 {
 		td.grid.SetSize(td.width, td.height)
 	}
@@ -75,14 +77,14 @@ func (td *ThreeDayView) PrevPeriod() {
 	td.rebuildGrid()
 }
 
-// MoveUp scrolls up.
+// MoveUp selects the previous event on the selected day.
 func (td *ThreeDayView) MoveUp() {
-	td.grid.ScrollUp()
+	td.grid.SelectPrevEvent()
 }
 
-// MoveDown scrolls down.
+// MoveDown selects the next event on the selected day.
 func (td *ThreeDayView) MoveDown() {
-	td.grid.ScrollDown()
+	td.grid.SelectNextEvent()
 }
 
 // MoveLeft moves to previous day.
@@ -103,4 +105,12 @@ func (td *ThreeDayView) View() string {
 		return ""
 	}
 	return td.grid.View()
+}
+
+// SelectedEvent returns the currently selected event, or nil.
+func (td *ThreeDayView) SelectedEvent() *ical.Event {
+	if td.grid == nil {
+		return nil
+	}
+	return td.grid.SelectedEvent()
 }

@@ -34,6 +34,9 @@ func NewSync(clients []*Client, cache *Cache, store *ical.Store, theme *config.T
 // SyncAll syncs all configured calendars. It clears the store first
 // to avoid stale events from previous syncs.
 func (s *Sync) SyncAll(ctx context.Context) error {
+	// Clear calendar registry before rebuilding
+	s.store.ClearCalendars()
+
 	// Collect all new events, then replace the store atomically
 	var allEvents []*ical.Event
 
@@ -64,11 +67,13 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 		return nil, err
 	}
 
-	// Determine the color for this calendar
+	// Get the config calendar name for grouping
 	calIdx := client.CalendarIndex()
-	calColor := string(s.theme.CalendarColor(calIdx))
-	if calIdx < len(s.cfg.Calendars) && s.cfg.Calendars[calIdx].Color != "" {
-		calColor = s.cfg.Calendars[calIdx].Color
+	configName := ""
+	configColor := ""
+	if calIdx < len(s.cfg.Calendars) {
+		configName = s.cfg.Calendars[calIdx].Name
+		configColor = s.cfg.Calendars[calIdx].Color
 	}
 
 	// Fetch events from each calendar
@@ -78,6 +83,23 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 
 	var events []*ical.Event
 	for _, cal := range calendars {
+		// Register each discovered sub-calendar with a unique ID
+		calColor := configColor
+		if calColor == "" {
+			calColor = string(s.theme.CalendarColor(len(s.store.Calendars)))
+		}
+
+		calName := cal.Name
+		if calName == "" {
+			calName = cal.Path
+		}
+
+		calID := s.store.RegisterCalendar(ical.CalendarInfo{
+			Name:   calName,
+			Color:  calColor,
+			Source: configName,
+		})
+
 		objects, err := client.FetchEvents(ctx, cal.Path, start, end)
 		if err != nil {
 			return nil, fmt.Errorf("fetching from %s: %w", cal.Path, err)
@@ -92,7 +114,7 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 			})
 
 			// Parse events
-			parsed, err := parseCalendarObject(obj.Data, calIdx)
+			parsed, err := parseCalendarObject(obj.Data, calID)
 			if err != nil {
 				continue // Skip unparseable events
 			}

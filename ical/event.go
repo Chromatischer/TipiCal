@@ -41,14 +41,43 @@ func (e *Event) OverlapsWith(start, end time.Time) bool {
 	return e.Start.Before(end) && e.End.After(start)
 }
 
+// CalendarInfo represents a discovered sub-calendar at runtime.
+type CalendarInfo struct {
+	ID     int    // unique sequential ID
+	Name   string // discovered calendar name (from CalDAV)
+	Color  string // resolved hex color
+	Source string // parent config calendar name (account name)
+}
+
 // Store holds events in memory and provides filtering.
 type Store struct {
-	Events []*Event
+	Events    []*Event
+	Calendars []CalendarInfo
 }
 
 // NewStore creates an empty event store.
 func NewStore() *Store {
 	return &Store{}
+}
+
+// RegisterCalendar adds a calendar to the registry and returns its ID.
+func (s *Store) RegisterCalendar(info CalendarInfo) int {
+	info.ID = len(s.Calendars)
+	s.Calendars = append(s.Calendars, info)
+	return info.ID
+}
+
+// ClearCalendars resets the calendar registry.
+func (s *Store) ClearCalendars() {
+	s.Calendars = nil
+}
+
+// CalendarName returns the name of the calendar with the given ID.
+func (s *Store) CalendarName(id int) string {
+	if id >= 0 && id < len(s.Calendars) {
+		return s.Calendars[id].Name
+	}
+	return ""
 }
 
 // EventsForDay returns all events that occur on the given day.
@@ -105,6 +134,19 @@ func (s *Store) FindEvent(uid string) *Event {
 func (s *Store) LoadTestData() {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+
+	// Register test calendars
+	s.ClearCalendars()
+	s.RegisterCalendar(CalendarInfo{
+		Name:   "Work",
+		Color:  "#3B82F6",
+		Source: "Work Account",
+	})
+	s.RegisterCalendar(CalendarInfo{
+		Name:   "Personal",
+		Color:  "#10B981",
+		Source: "Personal Account",
+	})
 
 	testEvents := []*Event{
 		{

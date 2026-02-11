@@ -8,10 +8,21 @@ import (
 	"github.com/terminal-ical/terminal-ical/caldav"
 	"github.com/terminal-ical/terminal-ical/config"
 	"github.com/terminal-ical/terminal-ical/ical"
+	"github.com/terminal-ical/terminal-ical/setup"
 	"github.com/terminal-ical/terminal-ical/ui"
 )
 
 func main() {
+	for _, arg := range os.Args[1:] {
+		if arg == "--setup" {
+			if err := setup.RunWizard(); err != nil {
+				fmt.Fprintf(os.Stderr, "Setup error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)

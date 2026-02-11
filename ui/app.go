@@ -88,7 +88,7 @@ func NewApp(cfg *config.Config, store *ical.Store, syncMgr *caldav.Sync) *App {
 		store:       store,
 		syncMgr:     syncMgr,
 		header:      NewHeader(styles, cfg.General.DefaultView, time.Now()),
-		sidebar:     NewSidebar(styles, cfg),
+		sidebar:     NewSidebar(styles, cfg, store),
 		statusbar:   NewStatusBar(styles),
 		eventEditor: editor.NewEventEditor(theme, store),
 		search:      components.NewSearch(theme, store, cfg.Use24h()),
@@ -127,8 +127,15 @@ func (a *App) activeView() CalendarView {
 	}
 }
 
-// calendarNames returns the names of configured calendars.
+// calendarNames returns the names of discovered calendars.
 func (a *App) calendarNames() []string {
+	if len(a.store.Calendars) > 0 {
+		names := make([]string, len(a.store.Calendars))
+		for i, c := range a.store.Calendars {
+			names[i] = c.Name
+		}
+		return names
+	}
 	if len(a.cfg.Calendars) == 0 {
 		return []string{"Work", "Personal"}
 	}
@@ -139,8 +146,21 @@ func (a *App) calendarNames() []string {
 	return names
 }
 
-// selectedEvent returns the first event on the selected day (simplified selection).
+// selectedEvent returns the selected event for the active view.
 func (a *App) selectedEvent() *ical.Event {
+	// For views with event-level selection, use their cursor
+	switch a.viewType {
+	case config.ViewWeek:
+		if ev := a.weekView.SelectedEvent(); ev != nil {
+			return ev
+		}
+	case config.ViewThreeDay:
+		if ev := a.threeDayView.SelectedEvent(); ev != nil {
+			return ev
+		}
+	}
+
+	// Fallback: first event on the selected day
 	day := a.activeView().SelectedDate()
 	events := a.store.EventsForDay(day)
 	if len(events) > 0 {

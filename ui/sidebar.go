@@ -5,28 +5,29 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/terminal-ical/terminal-ical/config"
+	"github.com/terminal-ical/terminal-ical/ical"
 	"github.com/terminal-ical/terminal-ical/ui/components"
 )
 
 // Sidebar renders the left panel with calendar list and mini-month.
 type Sidebar struct {
-	styles    *Styles
-	miniCal   *components.MiniCalendar
-	calendars []config.CalendarConfig
-	width     int
-	height    int
+	styles *Styles
+	miniCal *components.MiniCalendar
+	store  *ical.Store
+	width  int
+	height int
 }
 
 // NewSidebar creates a new sidebar component.
-func NewSidebar(styles *Styles, cfg *config.Config) *Sidebar {
+func NewSidebar(styles *Styles, cfg *config.Config, store *ical.Store) *Sidebar {
 	theme := styles.Theme
 	miniCal := components.NewMiniCalendar(theme, currentDate(), cfg.StartMonday())
 
 	return &Sidebar{
-		styles:    styles,
-		miniCal:   miniCal,
-		calendars: cfg.Calendars,
-		width:     22,
+		styles:  styles,
+		miniCal: miniCal,
+		store:   store,
+		width:   22,
 	}
 }
 
@@ -59,8 +60,9 @@ func (sb *Sidebar) View() string {
 		Render(" Calendars")
 	sections = append(sections, calTitle)
 
-	if len(sb.calendars) == 0 {
-		// Show default calendars when no config
+	cals := sb.store.Calendars
+	if len(cals) == 0 {
+		// Show default calendars when no config and no discovered calendars
 		defaults := []struct {
 			name  string
 			color lipgloss.Color
@@ -78,14 +80,23 @@ func (sb *Sidebar) View() string {
 			sections = append(sections, dot+name)
 		}
 	} else {
-		for i, cal := range sb.calendars {
-			color := sb.styles.Theme.CalendarColor(i)
-			if cal.Color != "" {
-				color = lipgloss.Color(cal.Color)
+		// Group calendars by source account
+		lastSource := ""
+		headerStyle := lipgloss.NewStyle().
+			Foreground(sb.styles.Theme.TextMuted).
+			Bold(true)
+		for _, cal := range cals {
+			if cal.Source != "" && cal.Source != lastSource {
+				sections = append(sections, headerStyle.Render("  "+cal.Source))
+				lastSource = cal.Source
+			}
+			color := lipgloss.Color(cal.Color)
+			if cal.Color == "" {
+				color = sb.styles.Theme.CalendarColor(cal.ID)
 			}
 			dot := lipgloss.NewStyle().
 				Foreground(color).
-				Render("  ●")
+				Render("    ●")
 			name := lipgloss.NewStyle().
 				Foreground(sb.styles.Theme.Text).
 				Render(" " + cal.Name)
