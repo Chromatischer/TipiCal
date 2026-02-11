@@ -1,6 +1,7 @@
 package caldav
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -105,13 +106,20 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 			return nil, fmt.Errorf("fetching from %s: %w", cal.Path, err)
 		}
 
+		// Store calendar metadata in cache
+		s.cache.SetIndexMeta(cal.Path, calName, calColor, calIdx)
+
 		for _, obj := range objects {
-			// Cache the raw data
-			s.cache.Put(cal.Path, CacheEntry{
-				Path:      obj.Path,
-				ETag:      obj.ETag,
-				FetchedAt: time.Now(),
-			})
+			// Serialize iCal data for caching
+			var buf bytes.Buffer
+			if err := goical.NewEncoder(&buf).Encode(obj.Data); err == nil {
+				s.cache.Put(cal.Path, CacheEntry{
+					Path:      obj.Path,
+					ETag:      obj.ETag,
+					Data:      buf.String(),
+					FetchedAt: time.Now(),
+				})
+			}
 
 			// Parse events
 			parsed, err := parseCalendarObject(obj.Data, calID)
@@ -150,6 +158,61 @@ func (s *Sync) expandRecurring(event *ical.Event, cal *goical.Calendar, rangeSta
 	}
 	// No RRULE found, return as-is
 	return []*ical.Event{event}
+}
+
+// LoadFromCache populates the store from cached iCal data for instant startup.
+func (s *Sync) LoadFromCache() {
+	indexes := s.cache.AllIndexes()
+	if len(indexes) == 0 {
+		return
+	}
+
+	now := time.Now()
+	start := now.AddDate(0, -1, 0)
+	end := now.AddDate(0, 3, 0)
+
+	var allEvents []*ical.Event
+
+	for _, idx := range indexes {
+		if len(idx.Entries) == 0 {
+			continue
+		}
+
+		calID := s.store.RegisterCalendar(ical.CalendarInfo{
+			Name:  idx.CalendarName,
+			Color: idx.CalendarColor,
+		})
+
+		for _, entry := range idx.Entries {
+			if entry.Data == "" {
+				continue
+			}
+
+			dec := goical.NewDecoder(strings.NewReader(entry.Data))
+			cal, err := dec.Decode()
+			if err != nil {
+				continue
+			}
+
+			parsed, err := parseCalendarObject(cal, calID)
+			if err != nil {
+				continue
+			}
+
+			for _, event := range parsed {
+				event.Color = idx.CalendarColor
+
+				if event.Recurring {
+					expanded := s.expandRecurring(event, cal, start, end)
+					allEvents = append(allEvents, expanded...)
+				} else {
+					allEvents = append(allEvents, event)
+				}
+			}
+		}
+	}
+
+	s.store.Events = allEvents
 }
 
 // parseCalendarObject converts a go-ical Calendar into our Event model.

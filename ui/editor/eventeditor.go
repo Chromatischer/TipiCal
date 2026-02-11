@@ -66,6 +66,7 @@ func (ee *EventEditor) OpenCreate(date time.Time, calendarNames []string) {
 
 	fields := []components.FormField{
 		{Label: "Title", Type: components.FieldText, Placeholder: "Event title"},
+		{Label: "All Day", Type: components.FieldSelect, Options: []string{"No", "Yes"}},
 		{Label: "Date", Type: components.FieldText, Value: date.Format("2006-01-02")},
 		{Label: "Start", Type: components.FieldText, Value: defaultStart.Format("15:04")},
 		{Label: "End", Type: components.FieldText, Value: defaultEnd.Format("15:04")},
@@ -89,8 +90,14 @@ func (ee *EventEditor) OpenEdit(event *ical.Event, calendarNames []string) {
 		calOptions = []string{"Work", "Personal"}
 	}
 
+	allDaySelected := 0
+	if event.AllDay {
+		allDaySelected = 1
+	}
+
 	fields := []components.FormField{
 		{Label: "Title", Type: components.FieldText, Value: event.Summary},
+		{Label: "All Day", Type: components.FieldSelect, Options: []string{"No", "Yes"}, Selected: allDaySelected},
 		{Label: "Date", Type: components.FieldText, Value: event.Start.Format("2006-01-02")},
 		{Label: "Start", Type: components.FieldText, Value: event.Start.Format("15:04")},
 		{Label: "End", Type: components.FieldText, Value: event.End.Format("15:04")},
@@ -187,33 +194,40 @@ func (ee *EventEditor) buildEventFromForm() *ical.Event {
 	fields := ee.form.Fields()
 
 	title := fields[0].Value
-	dateStr := fields[1].Value
-	startStr := fields[2].Value
-	endStr := fields[3].Value
-	location := fields[4].Value
-	calIdx := fields[5].Selected
-	notes := fields[6].Value
+	allDay := fields[1].Selected == 1 // 0=No, 1=Yes
+	dateStr := fields[2].Value
+	startStr := fields[3].Value
+	endStr := fields[4].Value
+	location := fields[5].Value
+	calIdx := fields[6].Selected
+	notes := fields[7].Value
 
-	// Parse date and time
+	// Parse date
 	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
 		date = time.Now()
 	}
 
-	start, err := time.Parse("15:04", startStr)
-	if err != nil {
-		start = time.Date(0, 1, 1, 9, 0, 0, 0, time.Local)
-	}
+	var startTime, endTime time.Time
+	if allDay {
+		startTime = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.Local)
+		endTime = startTime.AddDate(0, 0, 1)
+	} else {
+		start, err := time.Parse("15:04", startStr)
+		if err != nil {
+			start = time.Date(0, 1, 1, 9, 0, 0, 0, time.Local)
+		}
 
-	end, err := time.Parse("15:04", endStr)
-	if err != nil {
-		end = time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)
-	}
+		end, err := time.Parse("15:04", endStr)
+		if err != nil {
+			end = time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)
+		}
 
-	startTime := time.Date(date.Year(), date.Month(), date.Day(),
-		start.Hour(), start.Minute(), 0, 0, time.Local)
-	endTime := time.Date(date.Year(), date.Month(), date.Day(),
-		end.Hour(), end.Minute(), 0, 0, time.Local)
+		startTime = time.Date(date.Year(), date.Month(), date.Day(),
+			start.Hour(), start.Minute(), 0, 0, time.Local)
+		endTime = time.Date(date.Year(), date.Month(), date.Day(),
+			end.Hour(), end.Minute(), 0, 0, time.Local)
+	}
 
 	uid := ee.editingUID
 	if uid == "" {
@@ -227,6 +241,7 @@ func (ee *EventEditor) buildEventFromForm() *ical.Event {
 		Location:    location,
 		Start:       startTime,
 		End:         endTime,
+		AllDay:      allDay,
 		CalendarID:  calIdx,
 		Status:      "CONFIRMED",
 	}

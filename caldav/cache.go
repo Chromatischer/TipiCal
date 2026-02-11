@@ -18,10 +18,13 @@ type CacheEntry struct {
 
 // CacheIndex represents the cache metadata for a calendar.
 type CacheIndex struct {
-	CalendarURL string       `json:"calendar_url"`
-	SyncToken   string       `json:"sync_token"`
-	LastSync    time.Time    `json:"last_sync"`
-	Entries     []CacheEntry `json:"entries"`
+	CalendarURL   string       `json:"calendar_url"`
+	SyncToken     string       `json:"sync_token"`
+	LastSync      time.Time    `json:"last_sync"`
+	CalendarName  string       `json:"calendar_name"`
+	CalendarColor string       `json:"calendar_color"`
+	ConfigIndex   int          `json:"config_index"`
+	Entries       []CacheEntry `json:"entries"`
 }
 
 // Cache manages local caching of CalDAV objects.
@@ -72,6 +75,34 @@ func (c *Cache) GetAll(calURL string) []CacheEntry {
 		return nil
 	}
 	return idx.Entries
+}
+
+// AllIndexes returns all cached calendar indexes.
+func (c *Cache) AllIndexes() map[string]*CacheIndex {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	result := make(map[string]*CacheIndex, len(c.index))
+	for k, v := range c.index {
+		result[k] = v
+	}
+	return result
+}
+
+// SetIndexMeta updates the calendar metadata on a cache index.
+func (c *Cache) SetIndexMeta(calURL, name, color string, configIndex int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	idx, ok := c.index[calURL]
+	if !ok {
+		idx = &CacheIndex{CalendarURL: calURL}
+		c.index[calURL] = idx
+	}
+	idx.CalendarName = name
+	idx.CalendarColor = color
+	idx.ConfigIndex = configIndex
+	c.saveIndex()
 }
 
 // Put stores or updates a cached calendar entry.

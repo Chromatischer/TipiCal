@@ -56,6 +56,7 @@ func main() {
 
 		if len(clients) > 0 {
 			syncMgr = caldav.NewSync(clients, cache, store, theme, cfg)
+			syncMgr.LoadFromCache()
 		}
 	}
 

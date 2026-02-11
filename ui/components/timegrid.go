@@ -113,7 +113,7 @@ func (tg *TimeGrid) scrollToSelectedEvent() {
 	}
 
 	rph := tg.rowsPerHour()
-	headerLines := 2
+	headerLines := 2 + tg.allDayRowCount()
 	availableRows := tg.height - headerLines
 	if availableRows < 1 {
 		availableRows = 1
@@ -123,7 +123,12 @@ func (tg *TimeGrid) scrollToSelectedEvent() {
 		visibleHours = 1
 	}
 
-	eventHour := ev.Start.Hour()
+	// All-day events don't need scroll adjustment
+	if ev.AllDay {
+		return
+	}
+
+	eventHour := tg.eventEffectiveHour(ev, tg.selected)
 	viewStart := tg.startHour + tg.scrollY
 	viewEnd := viewStart + visibleHours
 
@@ -162,7 +167,7 @@ func (tg *TimeGrid) ScrollUp() {
 // ScrollDown scrolls the time grid down.
 func (tg *TimeGrid) ScrollDown() {
 	rph := tg.rowsPerHour()
-	headerLines := 2
+	headerLines := 2 + tg.allDayRowCount()
 	availableRows := tg.height - headerLines
 	if availableRows < 1 {
 		availableRows = 1
@@ -183,7 +188,7 @@ func (tg *TimeGrid) ScrollDown() {
 // rowsPerHour calculates how many terminal rows each hour slot should occupy
 // to fill the available vertical space.
 func (tg *TimeGrid) rowsPerHour() int {
-	headerLines := 2 // day header + separator
+	headerLines := 2 + tg.allDayRowCount() // day header + separator + all-day section
 	availableRows := tg.height - headerLines
 	if availableRows < 1 {
 		availableRows = 1
@@ -257,9 +262,19 @@ func (tg *TimeGrid) View() string {
 		Render(strings.Repeat("─", tg.width))
 	lines = append(lines, sep)
 
+	// All-day events section
+	allDayLines := tg.renderAllDaySection(colWidth, timeLabelWidth)
+	if len(allDayLines) > 0 {
+		lines = append(lines, allDayLines...)
+		allDaySep := lipgloss.NewStyle().
+			Foreground(tg.theme.Border).
+			Render(strings.Repeat("━", tg.width))
+		lines = append(lines, allDaySep)
+	}
+
 	// Time rows
 	rph := tg.rowsPerHour()
-	headerLines := 2
+	headerLines := 2 + tg.allDayRowCount()
 	availableRows := tg.height - headerLines
 	if availableRows < 1 {
 		availableRows = 1
@@ -384,6 +399,9 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 
 	var eventInCell *ical.Event
 	for _, e := range events {
+		if e.AllDay {
+			continue
+		}
 		if e.OverlapsWith(cellStart, cellEnd) {
 			eventInCell = e
 			break
@@ -402,8 +420,8 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 
 		isSelectedEvent := tg.isSelectedEvent(eventInCell)
 
-		// Check if this is the start hour of the event
-		if eventInCell.Start.Hour() == hour {
+		// Check if this is the effective start hour of the event on this day
+		if tg.eventEffectiveHour(eventInCell, day) == hour {
 			if isSelectedEvent {
 				// Selected event: render with outline using Selected color border
 				title := util.TruncateText(eventInCell.Summary, width-5)
@@ -471,6 +489,9 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 
 	var eventInCell *ical.Event
 	for _, e := range events {
+		if e.AllDay {
+			continue
+		}
 		if e.OverlapsWith(cellStart, cellEnd) {
 			eventInCell = e
 			break
@@ -515,6 +536,227 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		Width(width - 1).
 		Render(strings.Repeat(" ", width-1))
 	return borderStyle + emptyCell
+}
+
+// renderAllDaySection renders all-day events in a compact bar above the time grid.
+func (tg *TimeGrid) renderAllDaySection(colWidth, timeLabelWidth int) []string {
+	const maxVisibleRows = 3
+
+	// Collect all-day events per day, separating single-day from multi-day
+	hasAny := false
+	allDayByDay := make(map[string][]*ical.Event)    // visible events
+	strippedByDay := make(map[string]int)             // count of stripped multi-day events
+	strippedColorsByDay := make(map[string][]string)  // colors of stripped events
+
+	for _, day := range tg.days {
+		key := day.Format("2006-01-02")
+		var singleDay, multiDay []*ical.Event
+		for _, e := range tg.events[key] {
+			if !e.AllDay {
+				continue
+			}
+			hasAny = true
+			if e.AllDaySpanDays() > 1 {
+				multiDay = append(multiDay, e)
+			} else {
+				singleDay = append(singleDay, e)
+			}
+		}
+
+		all := append(singleDay, multiDay...)
+		if len(all) > maxVisibleRows {
+			// Keep single-day events first, then fill remaining slots with multi-day
+			visible := all
+			if len(singleDay) >= maxVisibleRows {
+				visible = singleDay[:maxVisibleRows]
+				stripped := len(all) - maxVisibleRows
+				strippedByDay[key] = stripped
+				for _, e := range all[maxVisibleRows:] {
+					c := e.Color
+					if c == "" {
+						c = string(tg.theme.CalendarColor(e.CalendarID))
+					}
+					strippedColorsByDay[key] = append(strippedColorsByDay[key], c)
+				}
+			} else {
+				remaining := maxVisibleRows - len(singleDay)
+				visible = append(singleDay, multiDay[:remaining]...)
+				stripped := len(multiDay) - remaining
+				strippedByDay[key] = stripped
+				for _, e := range multiDay[remaining:] {
+					c := e.Color
+					if c == "" {
+						c = string(tg.theme.CalendarColor(e.CalendarID))
+					}
+					strippedColorsByDay[key] = append(strippedColorsByDay[key], c)
+				}
+			}
+			allDayByDay[key] = visible
+		} else {
+			allDayByDay[key] = all
+		}
+	}
+	if !hasAny {
+		return nil
+	}
+
+	// Find the max number of visible all-day events on any single day
+	maxEvents := 0
+	hasStripped := false
+	for _, day := range tg.days {
+		key := day.Format("2006-01-02")
+		if len(allDayByDay[key]) > maxEvents {
+			maxEvents = len(allDayByDay[key])
+		}
+		if strippedByDay[key] > 0 {
+			hasStripped = true
+		}
+	}
+
+	borderStyle := lipgloss.NewStyle().
+		Foreground(tg.theme.Border).
+		Render("│")
+
+	var rows []string
+	for row := 0; row < maxEvents; row++ {
+		labelStyle := lipgloss.NewStyle().
+			Width(timeLabelWidth).
+			Align(lipgloss.Right).
+			Foreground(tg.theme.TextFaint)
+		var label string
+		if row == 0 {
+			label = "ALL"
+		}
+		line := labelStyle.Render(label) + " "
+
+		for _, day := range tg.days {
+			key := day.Format("2006-01-02")
+			evts := allDayByDay[key]
+			if row < len(evts) {
+				e := evts[row]
+				color := lipgloss.Color(e.Color)
+				if e.Color == "" {
+					color = tg.theme.CalendarColor(e.CalendarID)
+				}
+				isSelected := tg.isSelectedEvent(e)
+				title := util.TruncateText(e.Summary, colWidth-3)
+				if isSelected {
+					content := lipgloss.NewStyle().
+						Background(color).
+						Foreground(lipgloss.Color("#FFFFFF")).
+						Bold(true).
+						Width(colWidth - 3).
+						Padding(0, 1).
+						Render(title)
+					leftBorder := lipgloss.NewStyle().
+						Foreground(tg.theme.Selected).
+						Render("▐")
+					rightBorder := lipgloss.NewStyle().
+						Foreground(tg.theme.Selected).
+						Render("▌")
+					line += borderStyle + leftBorder + content + rightBorder
+				} else {
+					content := lipgloss.NewStyle().
+						Background(color).
+						Foreground(lipgloss.Color("#FFFFFF")).
+						Bold(true).
+						Width(colWidth - 1).
+						Padding(0, 1).
+						Render(title)
+					line += borderStyle + content
+				}
+			} else {
+				emptyCell := lipgloss.NewStyle().
+					Width(colWidth - 1).
+					Render(strings.Repeat(" ", colWidth-1))
+				line += borderStyle + emptyCell
+			}
+		}
+		rows = append(rows, line)
+	}
+
+	// Add indicator row for stripped multi-day events
+	if hasStripped {
+		labelStyle := lipgloss.NewStyle().
+			Width(timeLabelWidth).
+			Align(lipgloss.Right).
+			Foreground(tg.theme.TextFaint)
+		line := labelStyle.Render("") + " "
+
+		for _, day := range tg.days {
+			key := day.Format("2006-01-02")
+			count := strippedByDay[key]
+			if count > 0 {
+				// Build colored dots for each stripped event + count
+				var dots []string
+				colors := strippedColorsByDay[key]
+				for _, c := range colors {
+					dots = append(dots, lipgloss.NewStyle().
+						Foreground(lipgloss.Color(c)).
+						Render("●"))
+				}
+				indicator := fmt.Sprintf("%s +%d", strings.Join(dots, ""), count)
+				content := lipgloss.NewStyle().
+					Foreground(tg.theme.TextFaint).
+					Width(colWidth - 1).
+					Align(lipgloss.Center).
+					Render(indicator)
+				line += borderStyle + content
+			} else {
+				emptyCell := lipgloss.NewStyle().
+					Width(colWidth - 1).
+					Render(strings.Repeat(" ", colWidth-1))
+				line += borderStyle + emptyCell
+			}
+		}
+		rows = append(rows, line)
+	}
+
+	return rows
+}
+
+// allDayRowCount returns the number of rows consumed by the all-day section (including separator).
+func (tg *TimeGrid) allDayRowCount() int {
+	const maxVisibleRows = 3
+	maxEvents := 0
+	hasStripped := false
+	for _, day := range tg.days {
+		key := day.Format("2006-01-02")
+		count := 0
+		for _, e := range tg.events[key] {
+			if e.AllDay {
+				count++
+			}
+		}
+		if count > maxVisibleRows {
+			hasStripped = true
+			count = maxVisibleRows
+		}
+		if count > maxEvents {
+			maxEvents = count
+		}
+	}
+	if maxEvents == 0 {
+		return 0
+	}
+	rows := maxEvents + 1 // +1 for the thick separator line
+	if hasStripped {
+		rows++ // +1 for the indicator row
+	}
+	return rows
+}
+
+// eventEffectiveHour returns the hour at which an event effectively starts on
+// the given day. For single-day events this is Start.Hour(). For multi-day
+// events viewed on a day after their start date, this returns startHour (top
+// of the grid) since the event spans the entire visible range.
+func (tg *TimeGrid) eventEffectiveHour(e *ical.Event, day time.Time) int {
+	if util.SameDay(e.Start, day) {
+		return e.Start.Hour()
+	}
+	// Event started on a previous day — it runs from midnight on this day,
+	// so anchor it at the top of the grid.
+	return tg.startHour
 }
 
 // isSelectedEvent returns true if the given event is the currently selected event.
