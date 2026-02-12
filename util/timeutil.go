@@ -1,6 +1,10 @@
 package util
 
-import "time"
+import (
+	"time"
+
+	"github.com/mattn/go-runewidth"
+)
 
 // WeekStart returns the Monday of the week containing t.
 func WeekStart(t time.Time, startMonday bool) time.Time {
@@ -60,19 +64,18 @@ func DaysInMonth(year int, month time.Month) int {
 	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local).Day()
 }
 
-// TruncateText truncates text to maxLen, adding ellipsis if needed.
+// TruncateText truncates text to maxLen display columns, adding ellipsis if needed.
 func TruncateText(s string, maxLen int) string {
 	if maxLen <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= maxLen {
+	if runewidth.StringWidth(s) <= maxLen {
 		return s
 	}
 	if maxLen <= 1 {
 		return "…"
 	}
-	return string(runes[:maxLen-1]) + "…"
+	return runewidth.Truncate(s, maxLen, "…")
 }
 
 // HoursBetween returns start and end hours covering a set of events.

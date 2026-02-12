@@ -272,6 +272,13 @@ func (tg *TimeGrid) View() string {
 		lines = append(lines, allDaySep)
 	}
 
+	// Pre-compute overlap info per day
+	overlapInfoByDay := make(map[string]map[string]overlapInfo)
+	for _, day := range tg.days {
+		key := day.Format("2006-01-02")
+		overlapInfoByDay[key] = tg.findOverlapInfo(day, tg.events[key])
+	}
+
 	// Time rows
 	rph := tg.rowsPerHour()
 	headerLines := 2 + tg.allDayRowCount()
@@ -330,7 +337,7 @@ func (tg *TimeGrid) View() string {
 				for _, day := range tg.days {
 					key := day.Format("2006-01-02")
 					dayEvents := tg.events[key]
-					cellContent := tg.renderHourCell(h, day, dayEvents, colWidth)
+					cellContent := tg.renderHourCell(h, day, dayEvents, colWidth, overlapInfoByDay[key])
 					row += cellContent
 				}
 
@@ -373,7 +380,7 @@ func (tg *TimeGrid) View() string {
 					for _, day := range tg.days {
 						key := day.Format("2006-01-02")
 						dayEvents := tg.events[key]
-						cellContent := tg.renderContinuationCell(h, day, dayEvents, colWidth)
+						cellContent := tg.renderContinuationCell(h, day, dayEvents, colWidth, overlapInfoByDay[key])
 						row += cellContent
 					}
 					lines = append(lines, row)
@@ -393,71 +400,143 @@ func (tg *TimeGrid) View() string {
 		Render(result)
 }
 
-func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event, width int) string {
-	cellStart := time.Date(day.Year(), day.Month(), day.Day(), hour, 0, 0, 0, day.Location())
-	cellEnd := cellStart.Add(time.Hour)
-
-	var eventInCell *ical.Event
-	for _, e := range events {
-		if e.AllDay {
-			continue
-		}
-		if e.OverlapsWith(cellStart, cellEnd) {
-			eventInCell = e
-			break
-		}
-	}
+func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event, width int, oInfo map[string]overlapInfo) string {
+	primary, secondary := tg.findCellEvents(hour, day, events, oInfo)
 
 	borderStyle := lipgloss.NewStyle().
 		Foreground(tg.theme.Border).
 		Render("│")
 
-	if eventInCell != nil {
-		color := lipgloss.Color(eventInCell.Color)
-		if eventInCell.Color == "" {
-			color = tg.theme.CalendarColor(eventInCell.CalendarID)
+	// Overlap/indented rendering: secondary is present and column wide enough
+	if secondary != nil && width >= 6 {
+		oi := oInfo[secondary.UID]
+		secColor := tg.eventColor(secondary)
+		isSecSelected := tg.isSelectedEvent(secondary)
+		isPriSelected := primary != nil && tg.isSelectedEvent(primary)
+		isSecStart := tg.eventEffectiveHour(secondary, day) == hour
+
+		// Compute extra sidebar markers for nested overlaps
+		extraStr, extraCount := tg.extraSidebars(secondary, hour, day, events, oInfo)
+
+		var sidebars string
+		var overlapWidth int
+		if primary != nil {
+			sidebars = lipgloss.NewStyle().
+				Foreground(oi.overlappingColor).
+				Render("▌")
+			overlapWidth = 1
 		}
 
-		isSelectedEvent := tg.isSelectedEvent(eventInCell)
-
-		// Check if this is the effective start hour of the event on this day
-		if tg.eventEffectiveHour(eventInCell, day) == hour {
-			if isSelectedEvent {
-				// Selected event: render with outline using Selected color border
-				title := util.TruncateText(eventInCell.Summary, width-5)
-				content := lipgloss.NewStyle().
-					Background(color).
+		// Primary selected: selection marker on left, sidebars, then content
+		if isPriSelected {
+			selLeft := lipgloss.NewStyle().
+				Foreground(tg.theme.Selected).
+				Render("▐")
+			contentWidth := width - 3 - overlapWidth - extraCount
+			if contentWidth < 1 {
+				contentWidth = 1
+			}
+			var contentStr string
+			if isSecStart {
+				title := util.TruncateText(secondary.Summary, contentWidth-2)
+				contentStr = lipgloss.NewStyle().
+					Background(secColor).
 					Foreground(lipgloss.Color("#FFFFFF")).
 					Bold(true).
-					Width(width-3).
+					Width(contentWidth).
 					Padding(0, 1).
 					Render(title)
-				leftBorder := lipgloss.NewStyle().
-					Foreground(tg.theme.Selected).
-					Render("▐")
-				rightBorder := lipgloss.NewStyle().
-					Foreground(tg.theme.Selected).
-					Render("▌")
-				return borderStyle + leftBorder + content + rightBorder
+			} else {
+				contentStr = lipgloss.NewStyle().
+					Background(secColor).
+					Width(contentWidth).
+					Render(strings.Repeat(" ", contentWidth))
 			}
+			return borderStyle + selLeft + sidebars + extraStr + contentStr
+		}
 
-			title := util.TruncateText(eventInCell.Summary, width-3)
+		// Secondary selected
+		if isSecSelected {
+			contentWidth := width - 3 - overlapWidth - extraCount
+			if contentWidth < 1 {
+				contentWidth = 1
+			}
+			selLeft := lipgloss.NewStyle().
+				Foreground(tg.theme.Selected).
+				Render("▐")
+			selRight := lipgloss.NewStyle().
+				Foreground(tg.theme.Selected).
+				Render("▌")
+			var contentStr string
+			if isSecStart {
+				title := util.TruncateText(secondary.Summary, contentWidth-2)
+				contentStr = lipgloss.NewStyle().
+					Background(secColor).
+					Foreground(lipgloss.Color("#FFFFFF")).
+					Bold(true).
+					Width(contentWidth).
+					Padding(0, 1).
+					Render(title)
+			} else {
+				contentStr = lipgloss.NewStyle().
+					Background(secColor).
+					Width(contentWidth).
+					Render(strings.Repeat(" ", contentWidth))
+			}
+			return borderStyle + sidebars + extraStr + selLeft + contentStr + selRight
+		}
+
+		// No selection on either
+		contentWidth := width - 2 - overlapWidth - extraCount
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		var contentStr string
+		if isSecStart {
+			title := util.TruncateText(secondary.Summary, contentWidth-2)
+			contentStr = lipgloss.NewStyle().
+				Background(secColor).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Bold(true).
+				Width(contentWidth).
+				Padding(0, 1).
+				Render(title)
+		} else {
+			contentStr = lipgloss.NewStyle().
+				Background(secColor).
+				Width(contentWidth).
+				Render(strings.Repeat(" ", contentWidth))
+		}
+		return borderStyle + sidebars + extraStr + contentStr
+	}
+
+	// Single event rendering (no overlap)
+	eventInCell := primary
+	if eventInCell == nil {
+		eventInCell = secondary
+	}
+
+	if eventInCell == nil {
+		// Empty cell
+		dotBorder := lipgloss.NewStyle().
+			Foreground(tg.theme.Border).
+			Render(strings.Repeat("·", width-1))
+		return borderStyle + dotBorder
+	}
+
+	color := tg.eventColor(eventInCell)
+	isSelectedEvent := tg.isSelectedEvent(eventInCell)
+
+	if tg.eventEffectiveHour(eventInCell, day) == hour {
+		if isSelectedEvent {
+			title := util.TruncateText(eventInCell.Summary, width-5)
 			content := lipgloss.NewStyle().
 				Background(color).
 				Foreground(lipgloss.Color("#FFFFFF")).
 				Bold(true).
-				Width(width-1).
+				Width(width-3).
 				Padding(0, 1).
 				Render(title)
-			return borderStyle + content
-		}
-
-		// Continuation of event
-		if isSelectedEvent {
-			content := lipgloss.NewStyle().
-				Background(color).
-				Width(width - 3).
-				Render(strings.Repeat(" ", width-3))
 			leftBorder := lipgloss.NewStyle().
 				Foreground(tg.theme.Selected).
 				Render("▐")
@@ -467,75 +546,150 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 			return borderStyle + leftBorder + content + rightBorder
 		}
 
+		title := util.TruncateText(eventInCell.Summary, width-3)
 		content := lipgloss.NewStyle().
 			Background(color).
-			Width(width - 1).
-			Render(strings.Repeat(" ", width-1))
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Bold(true).
+			Width(width-1).
+			Padding(0, 1).
+			Render(title)
 		return borderStyle + content
 	}
 
-	// Empty cell
-	dotBorder := lipgloss.NewStyle().
-		Foreground(tg.theme.Border).
-		Render(strings.Repeat("·", width-1))
-	return borderStyle + dotBorder
+	// Continuation of event
+	if isSelectedEvent {
+		content := lipgloss.NewStyle().
+			Background(color).
+			Width(width - 3).
+			Render(strings.Repeat(" ", width-3))
+		leftBorder := lipgloss.NewStyle().
+			Foreground(tg.theme.Selected).
+			Render("▐")
+		rightBorder := lipgloss.NewStyle().
+			Foreground(tg.theme.Selected).
+			Render("▌")
+		return borderStyle + leftBorder + content + rightBorder
+	}
+
+	content := lipgloss.NewStyle().
+		Background(color).
+		Width(width - 1).
+		Render(strings.Repeat(" ", width-1))
+	return borderStyle + content
 }
 
 // renderContinuationCell renders a sub-row cell within an hour slot.
 // It shows event continuation (colored background) or an empty cell.
-func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ical.Event, width int) string {
-	cellStart := time.Date(day.Year(), day.Month(), day.Day(), hour, 0, 0, 0, day.Location())
-	cellEnd := cellStart.Add(time.Hour)
-
-	var eventInCell *ical.Event
-	for _, e := range events {
-		if e.AllDay {
-			continue
-		}
-		if e.OverlapsWith(cellStart, cellEnd) {
-			eventInCell = e
-			break
-		}
-	}
+func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ical.Event, width int, oInfo map[string]overlapInfo) string {
+	primary, secondary := tg.findCellEvents(hour, day, events, oInfo)
 
 	borderStyle := lipgloss.NewStyle().
 		Foreground(tg.theme.Border).
 		Render("│")
 
-	if eventInCell != nil {
-		color := lipgloss.Color(eventInCell.Color)
-		if eventInCell.Color == "" {
-			color = tg.theme.CalendarColor(eventInCell.CalendarID)
+	// Overlap/indented rendering
+	if secondary != nil && width >= 6 {
+		oi := oInfo[secondary.UID]
+		secColor := tg.eventColor(secondary)
+		isSecSelected := tg.isSelectedEvent(secondary)
+		isPriSelected := primary != nil && tg.isSelectedEvent(primary)
+
+		// Compute extra sidebar markers for nested overlaps
+		extraStr, extraCount := tg.extraSidebars(secondary, hour, day, events, oInfo)
+
+		var sidebars string
+		var overlapWidth int
+		if primary != nil {
+			sidebars = lipgloss.NewStyle().
+				Foreground(oi.overlappingColor).
+				Render("▌")
+			overlapWidth = 1
 		}
 
-		isSelectedEvent := tg.isSelectedEvent(eventInCell)
-
-		if isSelectedEvent {
-			content := lipgloss.NewStyle().
-				Background(color).
-				Width(width - 3).
-				Render(strings.Repeat(" ", width-3))
-			leftBorder := lipgloss.NewStyle().
+		// Primary selected: selection marker on left, sidebars, then content
+		if isPriSelected {
+			selLeft := lipgloss.NewStyle().
 				Foreground(tg.theme.Selected).
 				Render("▐")
-			rightBorder := lipgloss.NewStyle().
-				Foreground(tg.theme.Selected).
-				Render("▌")
-			return borderStyle + leftBorder + content + rightBorder
+			contentWidth := width - 3 - overlapWidth - extraCount
+			if contentWidth < 1 {
+				contentWidth = 1
+			}
+			contentStr := lipgloss.NewStyle().
+				Background(secColor).
+				Width(contentWidth).
+				Render(strings.Repeat(" ", contentWidth))
+			return borderStyle + selLeft + sidebars + extraStr + contentStr
 		}
 
-		content := lipgloss.NewStyle().
-			Background(color).
-			Width(width - 1).
-			Render(strings.Repeat(" ", width-1))
-		return borderStyle + content
+		// Secondary selected
+		if isSecSelected {
+			contentWidth := width - 3 - overlapWidth - extraCount
+			if contentWidth < 1 {
+				contentWidth = 1
+			}
+			selLeft := lipgloss.NewStyle().
+				Foreground(tg.theme.Selected).
+				Render("▐")
+			selRight := lipgloss.NewStyle().
+				Foreground(tg.theme.Selected).
+				Render("▌")
+			contentStr := lipgloss.NewStyle().
+				Background(secColor).
+				Width(contentWidth).
+				Render(strings.Repeat(" ", contentWidth))
+			return borderStyle + sidebars + extraStr + selLeft + contentStr + selRight
+		}
+
+		// No selection
+		contentWidth := width - 2 - overlapWidth - extraCount
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		contentStr := lipgloss.NewStyle().
+			Background(secColor).
+			Width(contentWidth).
+			Render(strings.Repeat(" ", contentWidth))
+		return borderStyle + sidebars + extraStr + contentStr
 	}
 
-	// Empty continuation cell
-	emptyCell := lipgloss.NewStyle().
+	// Single event rendering
+	eventInCell := primary
+	if eventInCell == nil {
+		eventInCell = secondary
+	}
+
+	if eventInCell == nil {
+		// Empty continuation cell
+		emptyCell := lipgloss.NewStyle().
+			Width(width - 1).
+			Render(strings.Repeat(" ", width-1))
+		return borderStyle + emptyCell
+	}
+
+	color := tg.eventColor(eventInCell)
+	isSelectedEvent := tg.isSelectedEvent(eventInCell)
+
+	if isSelectedEvent {
+		content := lipgloss.NewStyle().
+			Background(color).
+			Width(width - 3).
+			Render(strings.Repeat(" ", width-3))
+		leftBorder := lipgloss.NewStyle().
+			Foreground(tg.theme.Selected).
+			Render("▐")
+		rightBorder := lipgloss.NewStyle().
+			Foreground(tg.theme.Selected).
+			Render("▌")
+		return borderStyle + leftBorder + content + rightBorder
+	}
+
+	content := lipgloss.NewStyle().
+		Background(color).
 		Width(width - 1).
 		Render(strings.Repeat(" ", width-1))
-	return borderStyle + emptyCell
+	return borderStyle + content
 }
 
 // renderAllDaySection renders all-day events in a compact bar above the time grid.
@@ -545,55 +699,57 @@ func (tg *TimeGrid) renderAllDaySection(colWidth, timeLabelWidth int) []string {
 	// Collect all-day events per day, separating single-day from multi-day
 	hasAny := false
 	allDayByDay := make(map[string][]*ical.Event)    // visible events
-	strippedByDay := make(map[string]int)             // count of stripped multi-day events
-	strippedColorsByDay := make(map[string][]string)  // colors of stripped events
+	strippedByDay := make(map[string]int)            // count of stripped multi-day events
+	strippedColorsByDay := make(map[string][]string) // colors of stripped events
 
 	for _, day := range tg.days {
 		key := day.Format("2006-01-02")
-		var singleDay, multiDay []*ical.Event
+		var allDay []*ical.Event
 		for _, e := range tg.events[key] {
-			if !e.AllDay {
-				continue
-			}
-			hasAny = true
-			if e.AllDaySpanDays() > 1 {
-				multiDay = append(multiDay, e)
-			} else {
-				singleDay = append(singleDay, e)
+			if e.AllDay {
+				allDay = append(allDay, e)
+				hasAny = true
 			}
 		}
 
-		all := append(singleDay, multiDay...)
-		if len(all) > maxVisibleRows {
-			// Keep single-day events first, then fill remaining slots with multi-day
-			visible := all
-			if len(singleDay) >= maxVisibleRows {
-				visible = singleDay[:maxVisibleRows]
-				stripped := len(all) - maxVisibleRows
-				strippedByDay[key] = stripped
-				for _, e := range all[maxVisibleRows:] {
-					c := e.Color
-					if c == "" {
-						c = string(tg.theme.CalendarColor(e.CalendarID))
+		if len(allDay) > maxVisibleRows {
+			// Too many events: keep all single-day events, strip multi-day
+			// ones first (they appear on other days too).
+			var visible, stripped []*ical.Event
+			for _, e := range allDay {
+				if len(visible) < maxVisibleRows {
+					visible = append(visible, e)
+				} else if e.AllDaySpanDays() > 1 {
+					stripped = append(stripped, e)
+				} else {
+					// Single-day event that doesn't fit: swap out the last
+					// multi-day event in visible to make room.
+					swapped := false
+					for i := len(visible) - 1; i >= 0; i-- {
+						if visible[i].AllDaySpanDays() > 1 {
+							stripped = append(stripped, visible[i])
+							visible[i] = e
+							swapped = true
+							break
+						}
 					}
-					strippedColorsByDay[key] = append(strippedColorsByDay[key], c)
-				}
-			} else {
-				remaining := maxVisibleRows - len(singleDay)
-				visible = append(singleDay, multiDay[:remaining]...)
-				stripped := len(multiDay) - remaining
-				strippedByDay[key] = stripped
-				for _, e := range multiDay[remaining:] {
-					c := e.Color
-					if c == "" {
-						c = string(tg.theme.CalendarColor(e.CalendarID))
+					if !swapped {
+						// All visible are single-day; just strip this one
+						stripped = append(stripped, e)
 					}
-					strippedColorsByDay[key] = append(strippedColorsByDay[key], c)
 				}
 			}
 			allDayByDay[key] = visible
+			strippedByDay[key] = len(stripped)
+			for _, e := range stripped {
+				c := e.Color
+				if c == "" {
+					c = string(tg.theme.CalendarColor(e.CalendarID))
+				}
+				strippedColorsByDay[key] = append(strippedColorsByDay[key], c)
+			}
 		} else {
-			allDayByDay[key] = all
+			allDayByDay[key] = allDay
 		}
 	}
 	if !hasAny {
@@ -639,13 +795,13 @@ func (tg *TimeGrid) renderAllDaySection(colWidth, timeLabelWidth int) []string {
 					color = tg.theme.CalendarColor(e.CalendarID)
 				}
 				isSelected := tg.isSelectedEvent(e)
-				title := util.TruncateText(e.Summary, colWidth-3)
 				if isSelected {
+					title := util.TruncateText(e.Summary, colWidth-5)
 					content := lipgloss.NewStyle().
 						Background(color).
 						Foreground(lipgloss.Color("#FFFFFF")).
 						Bold(true).
-						Width(colWidth - 3).
+						Width(colWidth-3).
 						Padding(0, 1).
 						Render(title)
 					leftBorder := lipgloss.NewStyle().
@@ -656,11 +812,12 @@ func (tg *TimeGrid) renderAllDaySection(colWidth, timeLabelWidth int) []string {
 						Render("▌")
 					line += borderStyle + leftBorder + content + rightBorder
 				} else {
+					title := util.TruncateText(e.Summary, colWidth-3)
 					content := lipgloss.NewStyle().
 						Background(color).
 						Foreground(lipgloss.Color("#FFFFFF")).
 						Bold(true).
-						Width(colWidth - 1).
+						Width(colWidth-1).
 						Padding(0, 1).
 						Render(title)
 					line += borderStyle + content
@@ -687,15 +844,24 @@ func (tg *TimeGrid) renderAllDaySection(colWidth, timeLabelWidth int) []string {
 			key := day.Format("2006-01-02")
 			count := strippedByDay[key]
 			if count > 0 {
-				// Build colored dots for each stripped event + count
+				// Build colored dots for each stripped event + count.
+				// Cap the number of dots so the indicator fits within the column.
+				countStr := fmt.Sprintf(" +%d", count)
+				maxDots := colWidth - 1 - len(countStr)
+				if maxDots < 1 {
+					maxDots = 1
+				}
 				var dots []string
 				colors := strippedColorsByDay[key]
-				for _, c := range colors {
+				for i, c := range colors {
+					if i >= maxDots {
+						break
+					}
 					dots = append(dots, lipgloss.NewStyle().
 						Foreground(lipgloss.Color(c)).
 						Render("●"))
 				}
-				indicator := fmt.Sprintf("%s +%d", strings.Join(dots, ""), count)
+				indicator := fmt.Sprintf("%s%s", strings.Join(dots, ""), countStr)
 				content := lipgloss.NewStyle().
 					Foreground(tg.theme.TextFaint).
 					Width(colWidth - 1).
@@ -766,4 +932,170 @@ func (tg *TimeGrid) isSelectedEvent(e *ical.Event) bool {
 		return false
 	}
 	return sel.UID == e.UID
+}
+
+// eventColor returns the display color for an event.
+func (tg *TimeGrid) eventColor(e *ical.Event) lipgloss.Color {
+	if e.Color != "" {
+		return lipgloss.Color(e.Color)
+	}
+	return tg.theme.CalendarColor(e.CalendarID)
+}
+
+// overlapInfo tracks whether an event should be rendered indented due to overlap.
+type overlapInfo struct {
+	indented         bool
+	overlappingColor lipgloss.Color // color of the primary event it overlaps with (for sidebar)
+	overlappingUID   string         // UID of the primary event it overlaps with
+	// Extra overlaps with other indented events (for nested overlap rendering).
+	// When a third event overlaps with both a primary and a secondary, these
+	// track the secondary's color/UID so an additional sidebar marker can be drawn.
+	extraOverlapColors []lipgloss.Color
+	extraOverlapUIDs   []string
+}
+
+// findOverlapInfo pre-computes overlap relationships for a day's events.
+// An event is marked "indented" if it starts while another event is ongoing.
+// Once indented, it stays indented for its entire duration.
+func (tg *TimeGrid) findOverlapInfo(day time.Time, events []*ical.Event) map[string]overlapInfo {
+	info := make(map[string]overlapInfo)
+
+	var timed []*ical.Event
+	for _, e := range events {
+		if !e.AllDay {
+			timed = append(timed, e)
+		}
+	}
+
+	// First pass: mark indented status based on overlap with earlier-starting event.
+	for i := 0; i < len(timed); i++ {
+		for j := i + 1; j < len(timed); j++ {
+			a, b := timed[i], timed[j]
+			if !a.Start.Before(b.End) || !b.Start.Before(a.End) {
+				continue
+			}
+			aHour := tg.eventEffectiveHour(a, day)
+			bHour := tg.eventEffectiveHour(b, day)
+			var secondary *ical.Event
+			if aHour <= bHour {
+				secondary = b
+			} else {
+				secondary = a
+			}
+			if _, exists := info[secondary.UID]; !exists {
+				info[secondary.UID] = overlapInfo{indented: true}
+			}
+		}
+	}
+
+	// Second pass: set overlappingColor from the first primary event each secondary overlaps.
+	for _, e := range timed {
+		oi, isIndented := info[e.UID]
+		if !isIndented {
+			continue
+		}
+		for _, candidate := range timed {
+			if info[candidate.UID].indented {
+				continue
+			}
+			if !candidate.Start.Before(e.End) || !e.Start.Before(candidate.End) {
+				continue
+			}
+			oi.overlappingColor = tg.eventColor(candidate)
+			oi.overlappingUID = candidate.UID
+			info[e.UID] = oi
+			break
+		}
+	}
+
+	// Third pass: detect overlaps between indented events.
+	// When two indented events overlap, the later-starting one gets an extra
+	// sidebar marker for the earlier indented event's color.
+	for i := 0; i < len(timed); i++ {
+		for j := i + 1; j < len(timed); j++ {
+			a, b := timed[i], timed[j]
+			aInfo, aIndented := info[a.UID]
+			bInfo, bIndented := info[b.UID]
+			if !aIndented || !bIndented {
+				continue
+			}
+			if !a.Start.Before(b.End) || !b.Start.Before(a.End) {
+				continue
+			}
+			aHour := tg.eventEffectiveHour(a, day)
+			bHour := tg.eventEffectiveHour(b, day)
+			if aHour <= bHour {
+				bInfo.extraOverlapColors = append(bInfo.extraOverlapColors, tg.eventColor(a))
+				bInfo.extraOverlapUIDs = append(bInfo.extraOverlapUIDs, a.UID)
+				info[b.UID] = bInfo
+			} else {
+				aInfo.extraOverlapColors = append(aInfo.extraOverlapColors, tg.eventColor(b))
+				aInfo.extraOverlapUIDs = append(aInfo.extraOverlapUIDs, b.UID)
+				info[a.UID] = aInfo
+			}
+		}
+	}
+
+	return info
+}
+
+// isEventActiveInCell checks whether the event with the given UID is active
+// (overlapping) in the specified hour cell.
+func (tg *TimeGrid) isEventActiveInCell(uid string, hour int, day time.Time, events []*ical.Event) bool {
+	cellStart := time.Date(day.Year(), day.Month(), day.Day(), hour, 0, 0, 0, day.Location())
+	cellEnd := cellStart.Add(time.Hour)
+	for _, e := range events {
+		if e.UID == uid && !e.AllDay && e.OverlapsWith(cellStart, cellEnd) {
+			return true
+		}
+	}
+	return false
+}
+
+// extraSidebars computes extra sidebar marker strings for a secondary event that
+// overlaps with other indented events. Returns the combined sidebar string and
+// the number of extra markers rendered (to adjust content width).
+func (tg *TimeGrid) extraSidebars(secondary *ical.Event, hour int, day time.Time, events []*ical.Event, oInfo map[string]overlapInfo) (string, int) {
+	oi := oInfo[secondary.UID]
+	if len(oi.extraOverlapUIDs) == 0 {
+		return "", 0
+	}
+	var sidebars string
+	count := len(oi.extraOverlapUIDs)
+	for i, uid := range oi.extraOverlapUIDs {
+		if tg.isEventActiveInCell(uid, hour, day, events) {
+			sidebars += lipgloss.NewStyle().
+				Foreground(oi.extraOverlapColors[i]).
+				Render("▌")
+		} else {
+			sidebars += " "
+		}
+	}
+	return sidebars, count
+}
+
+// findCellEvents finds the primary (non-indented) and secondary (indented) events
+// overlapping the given hour cell.
+func (tg *TimeGrid) findCellEvents(hour int, day time.Time, events []*ical.Event, oInfo map[string]overlapInfo) (primary, secondary *ical.Event) {
+	cellStart := time.Date(day.Year(), day.Month(), day.Day(), hour, 0, 0, 0, day.Location())
+	cellEnd := cellStart.Add(time.Hour)
+	for _, e := range events {
+		if e.AllDay || !e.OverlapsWith(cellStart, cellEnd) {
+			continue
+		}
+		if oInfo[e.UID].indented {
+			if secondary == nil {
+				secondary = e
+			} else if tg.eventEffectiveHour(e, day) == hour && tg.eventEffectiveHour(secondary, day) != hour {
+				// Prefer the event starting at this hour so its title is shown;
+				// the other indented event is just a continuation.
+				secondary = e
+			}
+		} else {
+			if primary == nil {
+				primary = e
+			}
+		}
+	}
+	return
 }
