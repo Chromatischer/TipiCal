@@ -432,7 +432,7 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 			selLeft := lipgloss.NewStyle().
 				Foreground(tg.theme.Selected).
 				Render("▐")
-			contentWidth := width - 3 - overlapWidth - extraCount
+			contentWidth := width - 2 - overlapWidth - extraCount
 			if contentWidth < 1 {
 				contentWidth = 1
 			}
@@ -487,7 +487,7 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 		}
 
 		// No selection on either
-		contentWidth := width - 2 - overlapWidth - extraCount
+		contentWidth := width - 1 - overlapWidth - extraCount
 		if contentWidth < 1 {
 			contentWidth = 1
 		}
@@ -612,7 +612,7 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 			selLeft := lipgloss.NewStyle().
 				Foreground(tg.theme.Selected).
 				Render("▐")
-			contentWidth := width - 3 - overlapWidth - extraCount
+			contentWidth := width - 2 - overlapWidth - extraCount
 			if contentWidth < 1 {
 				contentWidth = 1
 			}
@@ -643,7 +643,7 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		}
 
 		// No selection
-		contentWidth := width - 2 - overlapWidth - extraCount
+		contentWidth := width - 1 - overlapWidth - extraCount
 		if contentWidth < 1 {
 			contentWidth = 1
 		}
@@ -1062,8 +1062,16 @@ func (tg *TimeGrid) extraSidebars(secondary *ical.Event, hour int, day time.Time
 	}
 	var sidebars string
 	count := len(oi.extraOverlapUIDs)
+	sel := tg.SelectedEvent()
 	for i, uid := range oi.extraOverlapUIDs {
 		if tg.isEventActiveInCell(uid, hour, day, events) {
+			isMarkerSelected := sel != nil && sel.UID == uid
+			if isMarkerSelected {
+				sidebars += lipgloss.NewStyle().
+					Foreground(tg.theme.Selected).
+					Render("▐")
+				count++
+			}
 			sidebars += lipgloss.NewStyle().
 				Foreground(oi.extraOverlapColors[i]).
 				Render("▌")
