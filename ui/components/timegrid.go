@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +35,9 @@ func NewTimeGrid(theme *config.Theme, days []time.Time, store *ical.Store, use24
 	for _, day := range days {
 		key := day.Format("2006-01-02")
 		events[key] = store.EventsForDay(day)
+		sort.Slice(events[key], func(i, j int) bool {
+			return events[key][i].Start.Before(events[key][j].Start)
+		})
 	}
 
 	return &TimeGrid{
