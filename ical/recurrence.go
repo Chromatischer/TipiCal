@@ -27,17 +27,18 @@ func ExpandRecurrence(event *Event, rruleStr string, rangeStart, rangeEnd time.T
 	var expanded []*Event
 	for _, instanceStart := range instances {
 		instance := &Event{
-			UID:         event.UID,
-			Summary:     event.Summary,
-			Description: event.Description,
-			Location:    event.Location,
-			Start:       instanceStart,
-			End:         instanceStart.Add(duration),
-			AllDay:      event.AllDay,
-			CalendarID:  event.CalendarID,
-			Color:       event.Color,
-			Status:      event.Status,
-			Recurring:   true,
+			UID:            event.UID,
+			Summary:        event.Summary,
+			Description:    event.Description,
+			Location:       event.Location,
+			Start:          instanceStart,
+			End:            instanceStart.Add(duration),
+			AllDay:         event.AllDay,
+			CalendarID:     event.CalendarID,
+			Color:          event.Color,
+			Status:         event.Status,
+			Recurring:      true,
+			RecurrenceRule: event.RecurrenceRule,
 		}
 		expanded = append(expanded, instance)
 	}

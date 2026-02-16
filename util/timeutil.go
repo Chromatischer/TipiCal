@@ -78,6 +78,98 @@ func TruncateText(s string, maxLen int) string {
 	return runewidth.Truncate(s, maxLen, "…")
 }
 
+// WrapText wraps text to the specified width (in display columns), respecting word boundaries
+// and preserving existing newlines. Returns a slice of lines.
+func WrapText(s string, width int) []string {
+	if width <= 0 {
+		return []string{""}
+	}
+
+	var result []string
+	lines := splitLines(s)
+
+	for _, line := range lines {
+		if runewidth.StringWidth(line) <= width {
+			result = append(result, line)
+			continue
+		}
+
+		// Wrap long line
+		wrapped := wrapLine(line, width)
+		result = append(result, wrapped...)
+	}
+
+	return result
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	current := ""
+	for _, r := range s {
+		if r == '\n' {
+			lines = append(lines, current)
+			current = ""
+		} else {
+			current += string(r)
+		}
+	}
+	if current != "" || len(lines) == 0 {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func wrapLine(line string, width int) []string {
+	var result []string
+	runes := []rune(line)
+
+	for len(runes) > 0 {
+		// Find the longest prefix that fits
+		end := 0
+		currentWidth := 0
+		lastSpace := -1
+
+		for i, r := range runes {
+			w := runewidth.RuneWidth(r)
+			if currentWidth+w > width {
+				break
+			}
+			currentWidth += w
+			end = i + 1
+
+			if r == ' ' || r == '\t' {
+				lastSpace = i
+			}
+		}
+
+		if end == 0 {
+			// Single character is too wide - force it anyway
+			end = 1
+		} else if end < len(runes) && lastSpace > 0 {
+			// Break at last space if not at end
+			end = lastSpace + 1
+		}
+
+		// Extract line and trim trailing space if we broke at a space
+		lineText := string(runes[:end])
+		if end < len(runes) && lastSpace > 0 && lastSpace+1 == end {
+			lineText = string(runes[:lastSpace])
+			// Skip the space for next line
+		} else if end < len(runes) {
+			// Didn't break at space, don't skip anything
+		}
+
+		result = append(result, lineText)
+		runes = runes[end:]
+	}
+
+	if len(result) == 0 {
+		result = append(result, "")
+	}
+
+	return result
+}
+
 // HoursBetween returns start and end hours covering a set of events.
 func HoursBetween(events []struct{ Start, End time.Time }, defaultStart, defaultEnd int) (int, int) {
 	minH := defaultStart

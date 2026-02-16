@@ -87,38 +87,107 @@ func (f *Form) Reset() {
 	f.cursor = 0
 }
 
+// textAreaLineInfo returns the current line index, the column within that line,
+// and the start offsets (in runes) of each line for the given value and cursor.
+func textAreaLineInfo(value string, cursor int) (line, col int, lineStarts []int) {
+	runes := []rune(value)
+	lineStarts = []int{0}
+	for i, r := range runes {
+		if r == '\n' {
+			lineStarts = append(lineStarts, i+1)
+		}
+	}
+	for i := len(lineStarts) - 1; i >= 0; i-- {
+		if cursor >= lineStarts[i] {
+			line = i
+			col = cursor - lineStarts[i]
+			break
+		}
+	}
+	return
+}
+
+// textAreaLineEnd returns the length (in runes) of the given line.
+func textAreaLineEnd(value string, lineStarts []int, line int) int {
+	runes := []rune(value)
+	start := lineStarts[line]
+	if line+1 < len(lineStarts) {
+		return lineStarts[line+1] - 1 - start // exclude the \n
+	}
+	return len(runes) - start
+}
+
 // HandleKey processes a key press.
 func (f *Form) HandleKey(key string) {
+	isTextArea := f.focused < len(f.fields) && f.fields[f.focused].Type == FieldTextArea
+
 	switch key {
-	case "tab", "down":
-		f.focused++
-		if f.focused >= len(f.fields)+1 { // +1 for buttons
-			f.focused = 0
-		}
-		f.cursor = len(f.fields[f.safeFieldIndex()].Value)
+	case "tab":
+		f.focusNext()
 
-	case "shift+tab", "up":
-		f.focused--
-		if f.focused < 0 {
-			f.focused = len(f.fields)
-		}
-		if f.focused < len(f.fields) {
-			f.cursor = len(f.fields[f.focused].Value)
+	case "shift+tab":
+		f.focusPrev()
+
+	case "down":
+		if isTextArea {
+			field := &f.fields[f.focused]
+			line, col, lineStarts := textAreaLineInfo(field.Value, f.cursor)
+			if line+1 < len(lineStarts) {
+				// Move to next line
+				nextLineLen := textAreaLineEnd(field.Value, lineStarts, line+1)
+				if col > nextLineLen {
+					col = nextLineLen
+				}
+				f.cursor = lineStarts[line+1] + col
+			} else {
+				// At last line, move to next field
+				f.focusNext()
+			}
+		} else {
+			f.focusNext()
 		}
 
-	case "ctrl+s", "enter":
+	case "up":
+		if isTextArea {
+			field := &f.fields[f.focused]
+			line, col, lineStarts := textAreaLineInfo(field.Value, f.cursor)
+			if line > 0 {
+				// Move to previous line
+				prevLineLen := textAreaLineEnd(field.Value, lineStarts, line-1)
+				if col > prevLineLen {
+					col = prevLineLen
+				}
+				f.cursor = lineStarts[line-1] + col
+			} else {
+				// At first line, move to previous field
+				f.focusPrev()
+			}
+		} else {
+			f.focusPrev()
+		}
+
+	case "ctrl+s":
+		f.submitted = true
+
+	case "enter":
 		if f.focused >= len(f.fields) {
 			// On button row
 			f.submitted = true
 			return
 		}
-		// Move to next field on enter
-		f.focused++
-		if f.focused >= len(f.fields)+1 {
-			f.submitted = true
-		}
-		if f.focused < len(f.fields) {
-			f.cursor = len(f.fields[f.focused].Value)
+		if isTextArea {
+			// Insert newline
+			field := &f.fields[f.focused]
+			runes := []rune(field.Value)
+			newRunes := make([]rune, 0, len(runes)+1)
+			newRunes = append(newRunes, runes[:f.cursor]...)
+			newRunes = append(newRunes, '\n')
+			newRunes = append(newRunes, runes[f.cursor:]...)
+			field.Value = string(newRunes)
+			f.cursor++
+		} else {
+			// Move to next field on enter
+			f.focusNext()
 		}
 
 	case "esc":
@@ -162,7 +231,7 @@ func (f *Form) HandleKey(key string) {
 				}
 				return
 			}
-			if f.cursor < len(field.Value) {
+			if f.cursor < len([]rune(field.Value)) {
 				f.cursor++
 			}
 		}
@@ -184,6 +253,26 @@ func (f *Form) HandleKey(key string) {
 				f.cursor += len([]rune(key))
 			}
 		}
+	}
+}
+
+func (f *Form) focusNext() {
+	f.focused++
+	if f.focused >= len(f.fields)+1 { // +1 for buttons
+		f.focused = 0
+	}
+	if f.focused < len(f.fields) {
+		f.cursor = len([]rune(f.fields[f.focused].Value))
+	}
+}
+
+func (f *Form) focusPrev() {
+	f.focused--
+	if f.focused < 0 {
+		f.focused = len(f.fields)
+	}
+	if f.focused < len(f.fields) {
+		f.cursor = len([]rune(f.fields[f.focused].Value))
 	}
 }
 
@@ -227,20 +316,24 @@ func (f *Form) View() string {
 	}
 
 	for i, field := range f.fields {
-		label := labelStyle.Render(field.Label + ":")
-
-		var input string
 		isFocused := i == f.focused
 
 		switch field.Type {
 		case FieldSelect:
-			input = f.renderSelect(field, inputWidth, isFocused)
+			label := labelStyle.Render(field.Label + ":")
+			input := f.renderSelect(field, inputWidth, isFocused)
+			lines = append(lines, label+input)
+			lines = append(lines, "")
+		case FieldTextArea:
+			rendered := f.renderTextArea(field, inputWidth, isFocused, labelStyle)
+			lines = append(lines, rendered...)
+			lines = append(lines, "")
 		default:
-			input = f.renderTextInput(field, inputWidth, isFocused)
+			label := labelStyle.Render(field.Label + ":")
+			input := f.renderTextInput(field, inputWidth, isFocused)
+			lines = append(lines, label+input)
+			lines = append(lines, "")
 		}
-
-		lines = append(lines, label+input)
-		lines = append(lines, "")
 	}
 
 	// Buttons
@@ -322,6 +415,71 @@ func (f *Form) renderTextInput(field FormField, width int, focused bool) string 
 	}
 
 	return style.Render(value)
+}
+
+func (f *Form) renderTextArea(field FormField, width int, focused bool, labelStyle lipgloss.Style) []string {
+	value := field.Value
+	valueLines := strings.Split(value, "\n")
+
+	// Determine which line the cursor is on and the column within it
+	cursorLine, cursorCol := 0, 0
+	if focused {
+		cursorLine, cursorCol, _ = textAreaLineInfo(value, f.cursor)
+	}
+
+	var result []string
+	for i, vl := range valueLines {
+		// Label only on first line
+		var label string
+		if i == 0 {
+			label = labelStyle.Render(field.Label + ":")
+		} else {
+			label = labelStyle.Render("")
+		}
+
+		displayLine := vl
+
+		style := lipgloss.NewStyle().
+			Width(width).
+			Padding(0, 1)
+
+		if focused {
+			style = style.
+				Background(f.theme.Surface).
+				Foreground(f.theme.Text)
+			if i == 0 {
+				// Top border for first line - no underline
+			}
+			if i == len(valueLines)-1 {
+				style = style.
+					Border(lipgloss.NormalBorder(), false, false, true, false).
+					BorderForeground(f.theme.Accent)
+			}
+
+			// Show cursor on the active line
+			if i == cursorLine {
+				runes := []rune(displayLine)
+				if cursorCol >= len(runes) {
+					displayLine = displayLine + "█"
+				} else {
+					displayLine = string(runes[:cursorCol]) + "█" + string(runes[cursorCol:])
+				}
+			}
+		} else {
+			style = style.
+				Background(f.theme.SurfaceAlt).
+				Foreground(f.theme.Text)
+		}
+
+		if !focused && value == "" && i == 0 {
+			style = style.Foreground(f.theme.TextFaint)
+			displayLine = field.Placeholder
+		}
+
+		result = append(result, label+style.Render(displayLine))
+	}
+
+	return result
 }
 
 func (f *Form) renderSelect(field FormField, width int, focused bool) string {

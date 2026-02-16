@@ -6,22 +6,173 @@ import (
 
 // Event represents a calendar event.
 type Event struct {
-	UID         string
-	Summary     string
-	Description string
-	Location    string
-	Start       time.Time
-	End         time.Time
-	AllDay      bool
-	CalendarID  int // index into config calendar list
-	Color       string
-	Status      string // CONFIRMED, TENTATIVE, CANCELLED
-	Recurring   bool
+	UID            string
+	Summary        string
+	Description    string
+	Location       string
+	Start          time.Time
+	End            time.Time
+	AllDay         bool
+	CalendarID     int // index into config calendar list
+	Color          string
+	Status         string // CONFIRMED, TENTATIVE, CANCELLED
+	Recurring      bool
+	RecurrenceRule string // RRULE string (e.g., "FREQ=DAILY;INTERVAL=1")
 }
 
 // Duration returns the duration of the event.
 func (e *Event) Duration() time.Duration {
 	return e.End.Sub(e.Start)
+}
+
+// RecurrenceDescription returns a human-readable description of the recurrence rule.
+func (e *Event) RecurrenceDescription() string {
+	if !e.Recurring || e.RecurrenceRule == "" {
+		return ""
+	}
+
+	// Parse the RRULE string
+	// Format: FREQ=DAILY;INTERVAL=2;COUNT=10
+	parts := make(map[string]string)
+	for _, part := range splitRRule(e.RecurrenceRule) {
+		kv := splitKeyValue(part)
+		if len(kv) == 2 {
+			parts[kv[0]] = kv[1]
+		}
+	}
+
+	freq := parts["FREQ"]
+	interval := parts["INTERVAL"]
+	if interval == "" {
+		interval = "1"
+	}
+
+	// Build description with explicit interval
+	desc := ""
+	switch freq {
+	case "DAILY":
+		if interval == "1" {
+			desc = "Daily"
+		} else {
+			desc = "Every " + interval + " days"
+		}
+	case "WEEKLY":
+		if interval == "1" {
+			desc = "Weekly"
+		} else {
+			desc = "Every " + interval + " weeks"
+		}
+		// Add day of week if present
+		if byday := parts["BYDAY"]; byday != "" {
+			desc += " on " + formatWeekdays(byday)
+		}
+	case "MONTHLY":
+		if interval == "1" {
+			desc = "Monthly"
+		} else {
+			desc = "Every " + interval + " months"
+		}
+	case "YEARLY":
+		if interval == "1" {
+			desc = "Yearly"
+		} else {
+			desc = "Every " + interval + " years"
+		}
+	default:
+		desc = "Yes"
+	}
+
+	// Add count if present
+	if count := parts["COUNT"]; count != "" {
+		desc += " (" + count + " times)"
+	} else if until := parts["UNTIL"]; until != "" {
+		desc += " (until " + until + ")"
+	}
+
+	return desc
+}
+
+// Helper functions for parsing RRULE
+func splitRRule(s string) []string {
+	var result []string
+	var current string
+	for _, r := range s {
+		if r == ';' {
+			if current != "" {
+				result = append(result, current)
+				current = ""
+			}
+		} else {
+			current += string(r)
+		}
+	}
+	if current != "" {
+		result = append(result, current)
+	}
+	return result
+}
+
+func splitKeyValue(s string) []string {
+	for i, r := range s {
+		if r == '=' {
+			return []string{s[:i], s[i+1:]}
+		}
+	}
+	return []string{s}
+}
+
+func formatWeekdays(byday string) string {
+	dayMap := map[string]string{
+		"MO": "Mon",
+		"TU": "Tue",
+		"WE": "Wed",
+		"TH": "Thu",
+		"FR": "Fri",
+		"SA": "Sat",
+		"SU": "Sun",
+	}
+
+	// Split by comma for multiple days
+	var days []string
+	var current string
+	for _, r := range byday {
+		if r == ',' {
+			if current != "" {
+				if name, ok := dayMap[current]; ok {
+					days = append(days, name)
+				}
+				current = ""
+			}
+		} else {
+			current += string(r)
+		}
+	}
+	if current != "" {
+		if name, ok := dayMap[current]; ok {
+			days = append(days, name)
+		}
+	}
+
+	if len(days) == 0 {
+		return byday
+	}
+
+	// Join days
+	if len(days) == 1 {
+		return days[0]
+	}
+	result := ""
+	for i, d := range days {
+		if i > 0 {
+			if i == len(days)-1 {
+				result += " and "
+			} else {
+				result += ", "
+			}
+		}
+		result += d
+	}
+	return result
 }
 
 // DurationHours returns the duration in fractional hours.
@@ -376,6 +527,41 @@ func (s *Store) LoadTestData() {
 			CalendarID: 0,
 			Color:      "#6366F1",
 			Status:     "CONFIRMED",
+		},
+		{
+			UID:            "test-recurring-1",
+			Summary:        "Daily Standup",
+			Location:       "Zoom",
+			Start:          today.Add(9 * time.Hour),
+			End:            today.Add(9*time.Hour + 15*time.Minute),
+			CalendarID:     0,
+			Color:          "#3B82F6",
+			Status:         "CONFIRMED",
+			Recurring:      true,
+			RecurrenceRule: "FREQ=DAILY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR",
+		},
+		{
+			UID:            "test-recurring-2",
+			Summary:        "Bi-weekly Planning",
+			Location:       "Conference Room A",
+			Start:          today.AddDate(0, 0, 1).Add(14 * time.Hour),
+			End:            today.AddDate(0, 0, 1).Add(15 * time.Hour),
+			CalendarID:     0,
+			Color:          "#3B82F6",
+			Status:         "CONFIRMED",
+			Recurring:      true,
+			RecurrenceRule: "FREQ=WEEKLY;INTERVAL=2;COUNT=10",
+		},
+		{
+			UID:            "test-recurring-3",
+			Summary:        "Monthly Review",
+			Start:          today.AddDate(0, 0, 5).Add(10 * time.Hour),
+			End:            today.AddDate(0, 0, 5).Add(11 * time.Hour),
+			CalendarID:     0,
+			Color:          "#7C3AED",
+			Status:         "CONFIRMED",
+			Recurring:      true,
+			RecurrenceRule: "FREQ=MONTHLY;INTERVAL=1",
 		},
 	}
 

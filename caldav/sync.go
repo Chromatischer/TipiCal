@@ -235,17 +235,29 @@ func parseCalendarObject(cal *goical.Calendar, calendarIndex int) ([]*ical.Event
 
 		// Summary
 		if prop := comp.Props.Get(goical.PropSummary); prop != nil {
-			event.Summary = prop.Value
+			if text, err := prop.Text(); err == nil {
+				event.Summary = text
+			} else {
+				event.Summary = prop.Value
+			}
 		}
 
 		// Description
 		if prop := comp.Props.Get(goical.PropDescription); prop != nil {
-			event.Description = prop.Value
+			if text, err := prop.Text(); err == nil {
+				event.Description = text
+			} else {
+				event.Description = prop.Value
+			}
 		}
 
 		// Location
 		if prop := comp.Props.Get(goical.PropLocation); prop != nil {
-			event.Location = prop.Value
+			if text, err := prop.Text(); err == nil {
+				event.Location = text
+			} else {
+				event.Location = prop.Value
+			}
 		}
 
 		// Status
@@ -282,6 +294,7 @@ func parseCalendarObject(cal *goical.Calendar, calendarIndex int) ([]*ical.Event
 		// RRULE check
 		if prop := comp.Props.Get(goical.PropRecurrenceRule); prop != nil {
 			event.Recurring = true
+			event.RecurrenceRule = prop.Value
 		}
 
 		if event.UID != "" && !event.Start.IsZero() {

@@ -256,6 +256,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.eventEditor.IsActive() {
 			a.eventEditor.HandleKey(msg.String())
 
+			// Check for status message (e.g. clipboard feedback)
+			if sm := a.eventEditor.StatusMessage(); sm != "" {
+				a.statusbar.SetMessage(sm)
+				a.eventEditor.ClearStatusMessage()
+			}
+
 			// Check for result
 			if result := a.eventEditor.Result(); result != nil {
 				a.handleEditorResult(result)
@@ -342,6 +348,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.statusbar.SetMessage("No event selected")
 			}
 
+		// Event detail
+		case "enter":
+			if event := a.selectedEvent(); event != nil {
+				calName := a.store.CalendarName(event.CalendarID)
+				a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
+				a.eventEditor.SetSize(a.width, a.height-3)
+			}
+
 		// Search
 		case "/":
 			a.search.SetSize(a.width, a.height-3)
@@ -373,6 +387,16 @@ func (a *App) handleEditorResult(result *editor.EditorResult) {
 		if result.Event != nil {
 			a.store.RemoveEvent(result.Event.UID)
 			a.statusbar.SetMessage("Event deleted: " + result.Event.Summary)
+		}
+	case "edit-from-detail":
+		if result.Event != nil {
+			a.eventEditor.OpenEdit(result.Event, a.calendarNames())
+			a.eventEditor.SetSize(a.width, a.height-3)
+		}
+	case "delete-from-detail":
+		if result.Event != nil {
+			a.eventEditor.OpenDelete(result.Event)
+			a.eventEditor.SetSize(a.width, a.height-3)
 		}
 	case "cancel":
 		a.statusbar.SetMessage("")
@@ -491,6 +515,7 @@ func (a *App) renderHelp() string {
 		{"b", "Toggle sidebar"},
 		{"", ""},
 		{"n", "New event"},
+		{"Enter", "Event details"},
 		{"e", "Edit event"},
 		{"D", "Delete event"},
 		{"/", "Search"},
