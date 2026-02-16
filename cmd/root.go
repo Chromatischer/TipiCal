@@ -20,6 +20,8 @@ func Execute() {
 		handleAuth()
 	case "help", "--help", "-h":
 		printHelp()
+	case "version", "--version", "-v":
+		printVersion()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", os.Args[1])
 		printHelp()
@@ -36,6 +38,7 @@ func printHelp() {
 	fmt.Println("  tipical auth add     Add a new calendar")
 	fmt.Println("  tipical auth test    Test calendar connections")
 	fmt.Println("  tipical auth list    List configured calendars")
+	fmt.Println("  tipical version      Show version")
 	fmt.Println("  tipical help         Show this help message")
 	fmt.Println()
 }

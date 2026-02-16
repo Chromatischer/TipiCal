@@ -2,6 +2,8 @@
 
 A fast, beautiful calendar interface for your terminal.
 
+EARLY BETA: Core features like editing, creating, and deleting are entirely untested and may not work at all.
+
 ![TipiCal UI](docs/images/main.png)
 
 ## Features
@@ -76,12 +78,18 @@ Press `?` in the app to see all keybindings.
 TipiCal supports any CalDAV server. Example config:
 
 ```toml
-[[calendars]]
+[[calendar]]
 name = "Personal"
 url = "https://nextcloud.example.com/remote.php/dav"
 username = "user"
-password = "app-password"
+# Prefer password_cmd for security. If you set password, it is stored in plain text.
+password_cmd = "pass show caldav/personal"
 ```
+
+## Security Notes
+
+- If you set `password`, it is stored in plain text in `~/.config/tipical/config.toml`.
+- Prefer `password_cmd` to fetch secrets from a password manager.
 
 ## License
 
