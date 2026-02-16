@@ -33,7 +33,7 @@ func RunWizard() error {
 	fmt.Println()
 
 	cfg.General.DefaultView = config.ViewType(Prompt(reader,
-		"Default view (month, week, threeday, day, agenda, stacked)",
+		"Default view (month, week, threeday, day, agenda)",
 		string(cfg.General.DefaultView)))
 
 	cfg.General.WeekStart = Prompt(reader,

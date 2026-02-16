@@ -60,7 +60,6 @@ type App struct {
 	threeDayView *views.ThreeDayView
 	dayView      *views.DayView
 	agendaView   *views.AgendaView
-	stackedView  *views.StackedView
 
 	// Window size
 	width  int
@@ -102,7 +101,6 @@ func NewApp(cfg *config.Config, store *ical.Store, syncMgr *caldav.Sync) *App {
 	app.threeDayView = views.NewThreeDayView(theme, store, cfg)
 	app.dayView = views.NewDayView(theme, store, cfg)
 	app.agendaView = views.NewAgendaView(theme, store, cfg)
-	app.stackedView = views.NewStackedView(theme, store, cfg)
 
 	return app
 }
@@ -120,8 +118,6 @@ func (a *App) activeView() CalendarView {
 		return a.dayView
 	case config.ViewAgenda:
 		return a.agendaView
-	case config.ViewStacked:
-		return a.stackedView
 	default:
 		return a.monthView
 	}
@@ -173,6 +169,7 @@ func (a *App) selectedEvent() *ical.Event {
 func (a *App) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tea.SetWindowTitle("TipiCal"),
+		a.header.WaveTick(), // Start the wave animation
 	}
 
 	// If we have a sync manager, trigger initial sync
@@ -237,6 +234,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, cmd
 
+	case waveTickMsg:
+		// Advance the wave animation
+		a.header.UpdateWave()
+		return a, a.header.WaveTick()
+
 	case tea.KeyMsg:
 		// If search is active, route keys to it
 		if a.search.IsActive() {
@@ -292,8 +294,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.switchView(config.ViewDay)
 		case "5", "a":
 			a.switchView(config.ViewAgenda)
-		case "6", "s":
-			a.switchView(config.ViewStacked)
 
 		// Navigation
 		case "h", "left":
@@ -439,7 +439,6 @@ func (a *App) updateLayout() {
 	a.threeDayView.SetSize(contentWidth, contentHeight)
 	a.dayView.SetSize(contentWidth, contentHeight)
 	a.agendaView.SetSize(contentWidth, contentHeight)
-	a.stackedView.SetSize(contentWidth, contentHeight)
 
 	// Update editor size
 	a.eventEditor.SetSize(a.width, contentHeight)
@@ -492,10 +491,16 @@ func (a *App) renderHelp() string {
 
 	keyStyle := lipgloss.NewStyle().
 		Foreground(a.theme.Accent).
+		Background(a.theme.Surface).
 		Bold(true).
 		Width(12)
 	descStyle := lipgloss.NewStyle().
-		Foreground(a.theme.Text)
+		Foreground(a.theme.Text).
+		Background(a.theme.Surface).
+		Width(34)
+	emptyStyle := lipgloss.NewStyle().
+		Background(a.theme.Surface).
+		Width(46)
 
 	bindings := []struct {
 		key  string
@@ -506,7 +511,6 @@ func (a *App) renderHelp() string {
 		{"3", "3-Day view"},
 		{"4/d", "Day view"},
 		{"5/a", "Agenda view"},
-		{"6/s", "Stacked view"},
 		{"", ""},
 		{"h/l ←/→", "Move left/right"},
 		{"j/k ↑/↓", "Move up/down"},
@@ -525,11 +529,11 @@ func (a *App) renderHelp() string {
 
 	var lines []string
 	lines = append(lines, titleStyle.Render("Keyboard Shortcuts"))
-	lines = append(lines, "")
+	lines = append(lines, emptyStyle.Render(""))
 
 	for _, b := range bindings {
 		if b.key == "" {
-			lines = append(lines, "")
+			lines = append(lines, emptyStyle.Render(""))
 			continue
 		}
 		lines = append(lines, keyStyle.Render(b.key)+descStyle.Render(b.desc))

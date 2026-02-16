@@ -5,16 +5,21 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/tipical/tipical/config"
 )
 
+// waveTickMsg triggers the wave animation update.
+type waveTickMsg struct{}
+
 // Header renders the top bar with current date range and view switcher.
 type Header struct {
-	styles   *Styles
-	width    int
-	viewType config.ViewType
-	date     time.Time
+	styles       *Styles
+	width        int
+	viewType     config.ViewType
+	date         time.Time
+	wavePosition int // Current position of the wave effect
 }
 
 // NewHeader creates a new header component.
@@ -41,6 +46,18 @@ func (h *Header) SetDate(d time.Time) {
 	h.date = d
 }
 
+// WaveTick returns a command that triggers the wave animation.
+func (h *Header) WaveTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return waveTickMsg{}
+	})
+}
+
+// UpdateWave advances the wave animation position.
+func (h *Header) UpdateWave() {
+	h.wavePosition = (h.wavePosition + 1) % 20 // Cycle through 20 positions
+}
+
 // View renders the header.
 func (h *Header) View() string {
 	// Date title based on current view
@@ -57,8 +74,6 @@ func (h *Header) View() string {
 		dateStr = h.date.Format("Monday, January 2, 2006")
 	case config.ViewAgenda:
 		dateStr = "Upcoming Events"
-	case config.ViewStacked:
-		dateStr = "Events"
 	}
 
 	navTitle := fmt.Sprintf("  %s  %s  %s", "◀", dateStr, "▶")
@@ -70,11 +85,8 @@ func (h *Header) View() string {
 	// View tabs
 	tabs := h.renderTabs()
 
-	// Logo
-	logo := lipgloss.NewStyle().
-		Foreground(h.styles.Theme.Accent).
-		Bold(true).
-		Render("  ical")
+	// Logo with wave effect
+	logo := h.renderLogoWithWave()
 
 	// Layout: logo | title ... tabs
 	titleWidth := lipgloss.Width(logo) + lipgloss.Width(title)
@@ -95,6 +107,34 @@ func (h *Header) View() string {
 	return h.styles.Header.Width(h.width).Render(bar)
 }
 
+// renderLogoWithWave renders the TipiCal logo with a wave animation effect.
+func (h *Header) renderLogoWithWave() string {
+	text := "  TipiCal"
+	waveWidth := 3 // Width of the wave highlight
+
+	var result strings.Builder
+	for i, ch := range text {
+		// Calculate distance from wave center
+		dist := (i - h.wavePosition + len(text)) % len(text)
+
+		// Check if this character is in the wave
+		inWave := dist < waveWidth
+
+		style := lipgloss.NewStyle().Bold(true)
+		if inWave {
+			// Brighter color for characters in the wave
+			style = style.Foreground(lipgloss.Color("#D0D0D0"))
+		} else {
+			// Normal accent color
+			style = style.Foreground(h.styles.Theme.Accent)
+		}
+
+		result.WriteString(style.Render(string(ch)))
+	}
+
+	return result.String()
+}
+
 func (h *Header) renderTabs() string {
 	type tab struct {
 		key   string
@@ -108,7 +148,6 @@ func (h *Header) renderTabs() string {
 		{"3", "3-Day", config.ViewThreeDay},
 		{"D", "Day", config.ViewDay},
 		{"A", "Agenda", config.ViewAgenda},
-		{"S", "Stack", config.ViewStacked},
 	}
 
 	var parts []string

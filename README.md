@@ -7,7 +7,7 @@ A fast, beautiful calendar interface for your terminal.
 ## Features
 
 - **CalDAV Sync** — Connect to any CalDAV server (Nextcloud, Google Calendar, iCloud, etc.)
-- **Multiple Views** — Day, 3-day, week, month, agenda, and stacked views
+- **Multiple Views** — Day, 3-day, week, month, and agenda views
 - **Rich Event Editor** — Create and edit events with recurrence, reminders, and more
 - **Fast Navigation** — Vim-style keybindings and intuitive controls
 - **Themeable** — Customizable colors and styling via TOML config

@@ -16,7 +16,6 @@ const (
 	ViewThreeDay ViewType = "threeday"
 	ViewDay      ViewType = "day"
 	ViewAgenda   ViewType = "agenda"
-	ViewStacked  ViewType = "stacked"
 )
 
 // Config is the top-level configuration.

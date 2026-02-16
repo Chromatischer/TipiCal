@@ -179,6 +179,7 @@ func NewStyles(theme *config.Theme) *Styles {
 
 	s.ModalTitle = lipgloss.NewStyle().
 		Foreground(theme.Accent).
+		Background(theme.Surface).
 		Bold(true).
 		Align(lipgloss.Center)
 

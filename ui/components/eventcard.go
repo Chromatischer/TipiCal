@@ -95,13 +95,20 @@ func EventDot(theme *config.Theme, event *ical.Event, maxWidth int, use24h bool,
 
 	dot := dotStyle.Render("●")
 
-	timeStr := util.FormatTime(event.Start, use24h)
-	title := util.TruncateText(event.Summary, maxWidth-len(timeStr)-3)
-
 	sep := " "
 	if len(bg) > 0 && bg[0] != "" {
 		sep = lipgloss.NewStyle().Background(bg[0]).Render(" ")
 	}
+
+	// For all-day events, skip the time and show only the title
+	if event.AllDay {
+		title := util.TruncateText(event.Summary, maxWidth-2)
+		return dot + sep + titleStyle.Render(title)
+	}
+
+	// For timed events, show time + title
+	timeStr := util.FormatTime(event.Start, use24h)
+	title := util.TruncateText(event.Summary, maxWidth-len(timeStr)-3)
 
 	return dot + sep + timeStyle.Render(timeStr) + sep + titleStyle.Render(title)
 }
