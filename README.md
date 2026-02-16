@@ -15,18 +15,26 @@ EARLY BETA: Core features like editing, creating, and deleting are entirely unte
 - **Themeable** — Customizable colors and styling via TOML config
 - **Offline Support** — Local cache with background sync
 
-![Calendar Views](docs/images/views.png)
+![M](docs/images/m.png)
+
+![A](docs/images/a.png)
+
+![Create New Events](docs/images/create.png)
+
+![View Details](docs/images/details.png)
+
+![Search](docs/images/search.png)
 
 ## Installation
 
 ```bash
-go install github.com/tipical/tipical@latest
+go install github.com/Chromatischer/TipiCal.git
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/tipical/tipical
+git clone https://github.com/Chromatischer/TipiCal.git
 cd tipical
 go build -o tipical
 ```
@@ -37,6 +45,7 @@ Run the setup wizard on first launch:
 
 ```bash
 tipical setup
+tipical auth add
 ```
 
 Or start immediately with demo data:
