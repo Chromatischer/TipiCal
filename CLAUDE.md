@@ -1,4 +1,4 @@
-# terminal-ical
+# TipiCal
 
 ## Gotchas
 

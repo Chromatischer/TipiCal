@@ -2,7 +2,7 @@ package ui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
+	"github.com/tipical/tipical/config"
 )
 
 // Styles holds all the shared lip gloss styles.

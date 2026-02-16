@@ -4,9 +4,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/ical"
-	"github.com/terminal-ical/terminal-ical/ui/components"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/ical"
+	"github.com/tipical/tipical/ui/components"
 )
 
 // Sidebar renders the left panel with calendar list and mini-month.

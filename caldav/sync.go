@@ -8,8 +8,8 @@ import (
 	"time"
 
 	goical "github.com/emersion/go-ical"
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/ical"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/ical"
 )
 
 // Sync manages syncing between CalDAV servers and the local event store.

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
+	"github.com/tipical/tipical/config"
 )
 
 // Header renders the top bar with current date range and view switcher.

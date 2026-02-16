@@ -6,12 +6,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/caldav"
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/ical"
-	"github.com/terminal-ical/terminal-ical/ui/components"
-	"github.com/terminal-ical/terminal-ical/ui/editor"
-	"github.com/terminal-ical/terminal-ical/ui/views"
+	"github.com/tipical/tipical/caldav"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/ical"
+	"github.com/tipical/tipical/ui/components"
+	"github.com/tipical/tipical/ui/editor"
+	"github.com/tipical/tipical/ui/views"
 )
 
 // CalendarView is the interface all views must implement.
@@ -172,7 +172,7 @@ func (a *App) selectedEvent() *ical.Event {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	cmds := []tea.Cmd{
-		tea.SetWindowTitle("terminal-ical"),
+		tea.SetWindowTitle("TipiCal"),
 	}
 
 	// If we have a sync manager, trigger initial sync

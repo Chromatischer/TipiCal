@@ -5,11 +5,11 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/terminal-ical/terminal-ical/caldav"
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/ical"
-	"github.com/terminal-ical/terminal-ical/setup"
-	"github.com/terminal-ical/terminal-ical/ui"
+	"github.com/tipical/tipical/caldav"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/ical"
+	"github.com/tipical/tipical/setup"
+	"github.com/tipical/tipical/ui"
 )
 
 func main() {

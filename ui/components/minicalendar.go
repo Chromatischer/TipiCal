@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/util"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/util"
 )
 
 // MiniCalendar renders a small month calendar for the sidebar.

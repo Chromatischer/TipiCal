@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
+	"github.com/tipical/tipical/config"
 )
 
 // Modal renders a centered modal overlay.

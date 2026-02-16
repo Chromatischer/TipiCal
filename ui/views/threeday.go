@@ -3,9 +3,9 @@ package views
 import (
 	"time"
 
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/ical"
-	"github.com/terminal-ical/terminal-ical/ui/components"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/ical"
+	"github.com/tipical/tipical/ui/components"
 )
 
 // ThreeDayView renders a 3-day view with hourly time slots.

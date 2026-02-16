@@ -10,7 +10,7 @@ import (
 
 	"github.com/emersion/go-webdav"
 	"github.com/emersion/go-webdav/caldav"
-	"github.com/terminal-ical/terminal-ical/config"
+	"github.com/tipical/tipical/config"
 )
 
 // Client wraps the CalDAV client with convenience methods.

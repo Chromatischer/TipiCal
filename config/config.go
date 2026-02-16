@@ -76,12 +76,12 @@ func DefaultConfig() *Config {
 		},
 		Sync: SyncConfig{
 			IntervalMinutes: 5,
-			CacheDir:        filepath.Join(cacheDir, "terminal-ical"),
+			CacheDir:        filepath.Join(cacheDir, "tipical"),
 		},
 	}
 }
 
-// Load loads the config from ~/.config/terminal-ical/config.toml.
+// Load loads the config from ~/.config/tipical/config.toml.
 // If the file doesn't exist, it returns defaults.
 func Load() (*Config, error) {
 	cfg := DefaultConfig()
@@ -91,7 +91,7 @@ func Load() (*Config, error) {
 		return cfg, nil
 	}
 
-	configPath := filepath.Join(configDir, "terminal-ical", "config.toml")
+	configPath := filepath.Join(configDir, "tipical", "config.toml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return cfg, nil
 	}

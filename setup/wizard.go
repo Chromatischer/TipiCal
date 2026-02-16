@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/terminal-ical/terminal-ical/caldav"
-	"github.com/terminal-ical/terminal-ical/config"
+	"github.com/tipical/tipical/caldav"
+	"github.com/tipical/tipical/config"
 	"golang.org/x/term"
 )
 
@@ -21,10 +21,10 @@ func RunWizard() error {
 	reader := bufio.NewReader(os.Stdin)
 	cfg := config.DefaultConfig()
 
-	fmt.Println("terminal-ical setup wizard")
-	fmt.Println("==========================")
+	fmt.Println("TipiCal setup wizard")
+	fmt.Println("====================")
 	fmt.Println()
-	fmt.Println("This will create a configuration file for terminal-ical.")
+	fmt.Println("This will create a configuration file for TipiCal.")
 	fmt.Println("Press Enter to accept the default value shown in [brackets].")
 	fmt.Println()
 
@@ -81,7 +81,7 @@ func RunWizard() error {
 		return fmt.Errorf("finding config directory: %w", err)
 	}
 
-	dir := filepath.Join(configDir, "terminal-ical")
+	dir := filepath.Join(configDir, "tipical")
 	configPath := filepath.Join(dir, "config.toml")
 
 	if _, err := os.Stat(configPath); err == nil {
@@ -106,7 +106,7 @@ func RunWizard() error {
 	}
 
 	fmt.Println("Configuration saved to", configPath)
-	fmt.Println("Run terminal-ical to start the app.")
+	fmt.Println("Run tipical to start the app.")
 	return nil
 }
 

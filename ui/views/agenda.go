@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/ical"
-	"github.com/terminal-ical/terminal-ical/util"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/ical"
+	"github.com/tipical/tipical/util"
 )
 
 // AgendaView renders a chronological list of upcoming events.

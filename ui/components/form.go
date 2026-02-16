@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
+	"github.com/tipical/tipical/config"
 )
 
 // FormFieldType represents the type of form field.
