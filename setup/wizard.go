@@ -32,15 +32,15 @@ func RunWizard() error {
 	fmt.Println("-- General Settings --")
 	fmt.Println()
 
-	cfg.General.DefaultView = config.ViewType(prompt(reader,
+	cfg.General.DefaultView = config.ViewType(Prompt(reader,
 		"Default view (month, week, threeday, day, agenda, stacked)",
 		string(cfg.General.DefaultView)))
 
-	cfg.General.WeekStart = prompt(reader,
+	cfg.General.WeekStart = Prompt(reader,
 		"Week starts on (monday, sunday)",
 		cfg.General.WeekStart)
 
-	cfg.General.TimeFormat = prompt(reader,
+	cfg.General.TimeFormat = Prompt(reader,
 		"Time format (24h, 12h)",
 		cfg.General.TimeFormat)
 
@@ -51,11 +51,11 @@ func RunWizard() error {
 	fmt.Println()
 
 	for {
-		cal := promptCalendar(reader)
+		cal := PromptCalendar(reader)
 		cfg.Calendars = append(cfg.Calendars, cal)
 
 		fmt.Println()
-		if !promptYesNo(reader, "Add another calendar?", false) {
+		if !PromptYesNo(reader, "Add another calendar?", false) {
 			break
 		}
 		fmt.Println()
@@ -67,7 +67,7 @@ func RunWizard() error {
 	fmt.Println("-- Sync Settings --")
 	fmt.Println()
 
-	intervalStr := prompt(reader, "Sync interval in minutes", fmt.Sprintf("%d", cfg.Sync.IntervalMinutes))
+	intervalStr := Prompt(reader, "Sync interval in minutes", fmt.Sprintf("%d", cfg.Sync.IntervalMinutes))
 	fmt.Sscanf(intervalStr, "%d", &cfg.Sync.IntervalMinutes)
 	if cfg.Sync.IntervalMinutes < 1 {
 		cfg.Sync.IntervalMinutes = 5
@@ -85,7 +85,7 @@ func RunWizard() error {
 	configPath := filepath.Join(dir, "config.toml")
 
 	if _, err := os.Stat(configPath); err == nil {
-		if !promptYesNo(reader, fmt.Sprintf("%s already exists. Overwrite?", configPath), false) {
+		if !PromptYesNo(reader, fmt.Sprintf("%s already exists. Overwrite?", configPath), false) {
 			fmt.Println("Aborted. No changes were made.")
 			return nil
 		}
@@ -110,24 +110,25 @@ func RunWizard() error {
 	return nil
 }
 
-func promptCalendar(reader *bufio.Reader) config.CalendarConfig {
+// PromptCalendar prompts for calendar configuration interactively.
+func PromptCalendar(reader *bufio.Reader) config.CalendarConfig {
 	var cal config.CalendarConfig
 
-	cal.Name = prompt(reader, "Calendar name", "")
-	cal.URL = prompt(reader, "CalDAV URL", "")
-	cal.Username = prompt(reader, "Username", "")
+	cal.Name = Prompt(reader, "Calendar name", "")
+	cal.URL = Prompt(reader, "CalDAV URL", "")
+	cal.Username = Prompt(reader, "Username", "")
 
-	useCmd := promptYesNo(reader, "Use a command for password (e.g. pass, secret-tool)?", false)
+	useCmd := PromptYesNo(reader, "Use a command for password (e.g. pass, secret-tool)?", false)
 	if useCmd {
-		cal.PasswordCmd = prompt(reader, "Password command", "")
+		cal.PasswordCmd = Prompt(reader, "Password command", "")
 	} else {
-		cal.Password = promptPassword(reader)
+		cal.Password = PromptPassword(reader)
 	}
 
-	cal.Color = prompt(reader, "Color (hex, e.g. #FF5733, or empty for default)", "")
-	cal.ReadOnly = promptYesNo(reader, "Read-only?", false)
+	cal.Color = Prompt(reader, "Color (hex, e.g. #FF5733, or empty for default)", "")
+	cal.ReadOnly = PromptYesNo(reader, "Read-only?", false)
 
-	if promptYesNo(reader, "Test connection now?", true) {
+	if PromptYesNo(reader, "Test connection now?", true) {
 		testConnection(&cal)
 	}
 
@@ -157,7 +158,8 @@ func testConnection(cal *config.CalendarConfig) {
 	}
 }
 
-func prompt(reader *bufio.Reader, label, defaultVal string) string {
+// Prompt prompts the user for input with an optional default value.
+func Prompt(reader *bufio.Reader, label, defaultVal string) string {
 	if defaultVal != "" {
 		fmt.Printf("  %s [%s]: ", label, defaultVal)
 	} else {
@@ -172,7 +174,8 @@ func prompt(reader *bufio.Reader, label, defaultVal string) string {
 	return val
 }
 
-func promptYesNo(reader *bufio.Reader, label string, defaultYes bool) bool {
+// PromptYesNo prompts the user for a yes/no answer.
+func PromptYesNo(reader *bufio.Reader, label string, defaultYes bool) bool {
 	hint := "y/N"
 	if defaultYes {
 		hint = "Y/n"
@@ -187,7 +190,8 @@ func promptYesNo(reader *bufio.Reader, label string, defaultYes bool) bool {
 	return val == "y" || val == "yes"
 }
 
-func promptPassword(reader *bufio.Reader) string {
+// PromptPassword prompts the user for a password (hidden input if terminal supports it).
+func PromptPassword(reader *bufio.Reader) string {
 	fmt.Print("  Password: ")
 	fd := int(os.Stdin.Fd())
 	if term.IsTerminal(fd) {
