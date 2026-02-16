@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/terminal-ical/terminal-ical/config"
-	"github.com/terminal-ical/terminal-ical/ical"
-	"github.com/terminal-ical/terminal-ical/util"
+	"github.com/tipical/tipical/config"
+	"github.com/tipical/tipical/ical"
+	"github.com/tipical/tipical/util"
 )
 
 // TimeGrid renders a vertical time grid with events for one or more days.
@@ -341,7 +341,7 @@ func (tg *TimeGrid) View() string {
 				for _, day := range tg.days {
 					key := day.Format("2006-01-02")
 					dayEvents := tg.events[key]
-					cellContent := tg.renderHourCell(h, day, dayEvents, colWidth, overlapInfoByDay[key])
+					cellContent := tg.renderHourCell(h, day, dayEvents, colWidth, overlapInfoByDay[key], 0, currentRPH)
 					row += cellContent
 				}
 
@@ -384,7 +384,7 @@ func (tg *TimeGrid) View() string {
 					for _, day := range tg.days {
 						key := day.Format("2006-01-02")
 						dayEvents := tg.events[key]
-						cellContent := tg.renderContinuationCell(h, day, dayEvents, colWidth, overlapInfoByDay[key])
+						cellContent := tg.renderContinuationCell(h, day, dayEvents, colWidth, overlapInfoByDay[key], r, currentRPH)
 						row += cellContent
 					}
 					lines = append(lines, row)
@@ -404,8 +404,22 @@ func (tg *TimeGrid) View() string {
 		Render(result)
 }
 
-func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event, width int, oInfo map[string]overlapInfo) string {
+func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event, width int, oInfo map[string]overlapInfo, subRow int, rph int) string {
 	primary, secondary := tg.findCellEvents(hour, day, events, oInfo)
+
+	// Calculate sub-row time range for filtering events
+	subRowStartMinute := (subRow * 60) / rph
+	subRowEndMinute := ((subRow + 1) * 60) / rph
+	subRowStart := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowStartMinute, 0, 0, day.Location())
+	subRowEnd := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowEndMinute, 0, 0, day.Location())
+
+	// Filter events not yet active at this sub-row
+	if primary != nil && util.SameDay(primary.Start, day) && !primary.Start.Before(subRowEnd) {
+		primary = nil
+	}
+	if secondary != nil && util.SameDay(secondary.Start, day) && !secondary.Start.Before(subRowEnd) {
+		secondary = nil
+	}
 
 	borderStyle := lipgloss.NewStyle().
 		Foreground(tg.theme.Border).
@@ -413,8 +427,19 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 
 	// Overlap/indented rendering: secondary is present and column wide enough
 	if secondary != nil && width >= 6 {
-		isSecStart := tg.eventEffectiveHour(secondary, day) == hour
-		isPriStart := primary != nil && tg.eventEffectiveHour(primary, day) == hour
+		// Check if events start within this sub-row
+		isSecStart := util.SameDay(secondary.Start, day) &&
+			!secondary.Start.Before(subRowStart) && secondary.Start.Before(subRowEnd)
+		isPriStart := primary != nil && util.SameDay(primary.Start, day) &&
+			!primary.Start.Before(subRowStart) && primary.Start.Before(subRowEnd)
+
+		// Multi-day events: show title at top of grid
+		if !util.SameDay(secondary.Start, day) {
+			isSecStart = hour == tg.startHour && subRow == 0
+		}
+		if primary != nil && !util.SameDay(primary.Start, day) {
+			isPriStart = hour == tg.startHour && subRow == 0
+		}
 
 		// Determine which event gets the content area vs the sidebar marker.
 		// When the primary starts at this hour, it gets the content area so its
@@ -548,7 +573,15 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 	color := tg.eventColor(eventInCell)
 	isSelectedEvent := tg.isSelectedEvent(eventInCell)
 
-	if tg.eventEffectiveHour(eventInCell, day) == hour {
+	// Check if event starts within this sub-row
+	isEventStart := util.SameDay(eventInCell.Start, day) &&
+		!eventInCell.Start.Before(subRowStart) && eventInCell.Start.Before(subRowEnd)
+	// Multi-day events: show title at top of grid
+	if !util.SameDay(eventInCell.Start, day) {
+		isEventStart = hour == tg.startHour && subRow == 0
+	}
+
+	if isEventStart {
 		if isSelectedEvent {
 			title := util.TruncateText(eventInCell.Summary, width-5)
 			content := lipgloss.NewStyle().
@@ -602,8 +635,22 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 
 // renderContinuationCell renders a sub-row cell within an hour slot.
 // It shows event continuation (colored background) or an empty cell.
-func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ical.Event, width int, oInfo map[string]overlapInfo) string {
+func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ical.Event, width int, oInfo map[string]overlapInfo, subRow int, rph int) string {
 	primary, secondary := tg.findCellEvents(hour, day, events, oInfo)
+
+	// Calculate sub-row time range for filtering events
+	subRowStartMinute := (subRow * 60) / rph
+	subRowEndMinute := ((subRow + 1) * 60) / rph
+	subRowStart := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowStartMinute, 0, 0, day.Location())
+	subRowEnd := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowEndMinute, 0, 0, day.Location())
+
+	// Filter events not yet active at this sub-row
+	if primary != nil && util.SameDay(primary.Start, day) && !primary.Start.Before(subRowEnd) {
+		primary = nil
+	}
+	if secondary != nil && util.SameDay(secondary.Start, day) && !secondary.Start.Before(subRowEnd) {
+		secondary = nil
+	}
 
 	borderStyle := lipgloss.NewStyle().
 		Foreground(tg.theme.Border).
@@ -611,18 +658,32 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 
 	// Overlap/indented rendering
 	if secondary != nil && width >= 6 {
-		isSecStart := tg.eventEffectiveHour(secondary, day) == hour
-		isPriStart := primary != nil && tg.eventEffectiveHour(primary, day) == hour
+		// Check if events start within this sub-row
+		isSecStart := util.SameDay(secondary.Start, day) &&
+			!secondary.Start.Before(subRowStart) && secondary.Start.Before(subRowEnd)
+		isPriStart := primary != nil && util.SameDay(primary.Start, day) &&
+			!primary.Start.Before(subRowStart) && primary.Start.Before(subRowEnd)
+
+		// Multi-day events: show title at top of grid
+		if !util.SameDay(secondary.Start, day) {
+			isSecStart = hour == tg.startHour && subRow == 0
+		}
+		if primary != nil && !util.SameDay(primary.Start, day) {
+			isPriStart = hour == tg.startHour && subRow == 0
+		}
 
 		// Determine which event gets the content area vs the sidebar marker.
 		contentEvent := secondary
 		sidebarEvent := primary
+		isContentStart := isSecStart
 		if isPriStart && !isSecStart {
 			contentEvent = primary
 			sidebarEvent = secondary
+			isContentStart = isPriStart
 		} else if isPriStart && isSecStart && primary != nil && !primary.Start.After(secondary.Start) {
 			contentEvent = primary
 			sidebarEvent = secondary
+			isContentStart = isPriStart
 		}
 
 		contentColor := tg.eventColor(contentEvent)
@@ -651,10 +712,22 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 			if contentWidth < 1 {
 				contentWidth = 1
 			}
-			contentStr := lipgloss.NewStyle().
-				Background(contentColor).
-				Width(contentWidth).
-				Render(strings.Repeat(" ", contentWidth))
+			var contentStr string
+			if isContentStart {
+				title := util.TruncateText(contentEvent.Summary, contentWidth-2)
+				contentStr = lipgloss.NewStyle().
+					Background(contentColor).
+					Foreground(lipgloss.Color("#FFFFFF")).
+					Bold(true).
+					Width(contentWidth).
+					Padding(0, 1).
+					Render(title)
+			} else {
+				contentStr = lipgloss.NewStyle().
+					Background(contentColor).
+					Width(contentWidth).
+					Render(strings.Repeat(" ", contentWidth))
+			}
 			return borderStyle + selLeft + sidebars + extraStr + contentStr
 		}
 
@@ -670,10 +743,22 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 			selRight := lipgloss.NewStyle().
 				Foreground(tg.theme.Selected).
 				Render("▌")
-			contentStr := lipgloss.NewStyle().
-				Background(contentColor).
-				Width(contentWidth).
-				Render(strings.Repeat(" ", contentWidth))
+			var contentStr string
+			if isContentStart {
+				title := util.TruncateText(contentEvent.Summary, contentWidth-2)
+				contentStr = lipgloss.NewStyle().
+					Background(contentColor).
+					Foreground(lipgloss.Color("#FFFFFF")).
+					Bold(true).
+					Width(contentWidth).
+					Padding(0, 1).
+					Render(title)
+			} else {
+				contentStr = lipgloss.NewStyle().
+					Background(contentColor).
+					Width(contentWidth).
+					Render(strings.Repeat(" ", contentWidth))
+			}
 			return borderStyle + sidebars + extraStr + selLeft + contentStr + selRight
 		}
 
@@ -682,10 +767,22 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		if contentWidth < 1 {
 			contentWidth = 1
 		}
-		contentStr := lipgloss.NewStyle().
-			Background(contentColor).
-			Width(contentWidth).
-			Render(strings.Repeat(" ", contentWidth))
+		var contentStr string
+		if isContentStart {
+			title := util.TruncateText(contentEvent.Summary, contentWidth-2)
+			contentStr = lipgloss.NewStyle().
+				Background(contentColor).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Bold(true).
+				Width(contentWidth).
+				Padding(0, 1).
+				Render(title)
+		} else {
+			contentStr = lipgloss.NewStyle().
+				Background(contentColor).
+				Width(contentWidth).
+				Render(strings.Repeat(" ", contentWidth))
+		}
 		return borderStyle + sidebars + extraStr + contentStr
 	}
 
@@ -706,11 +803,31 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 	color := tg.eventColor(eventInCell)
 	isSelectedEvent := tg.isSelectedEvent(eventInCell)
 
+	// Check if event starts within this sub-row
+	isEventStart := util.SameDay(eventInCell.Start, day) &&
+		!eventInCell.Start.Before(subRowStart) && eventInCell.Start.Before(subRowEnd)
+	// Multi-day events: show title at top of grid
+	if !util.SameDay(eventInCell.Start, day) {
+		isEventStart = hour == tg.startHour && subRow == 0
+	}
+
 	if isSelectedEvent {
-		content := lipgloss.NewStyle().
-			Background(color).
-			Width(width - 3).
-			Render(strings.Repeat(" ", width-3))
+		var content string
+		if isEventStart {
+			title := util.TruncateText(eventInCell.Summary, width-5)
+			content = lipgloss.NewStyle().
+				Background(color).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Bold(true).
+				Width(width - 3).
+				Padding(0, 1).
+				Render(title)
+		} else {
+			content = lipgloss.NewStyle().
+				Background(color).
+				Width(width - 3).
+				Render(strings.Repeat(" ", width-3))
+		}
 		leftBorder := lipgloss.NewStyle().
 			Foreground(tg.theme.Selected).
 			Render("▐")
@@ -720,10 +837,22 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		return borderStyle + leftBorder + content + rightBorder
 	}
 
-	content := lipgloss.NewStyle().
-		Background(color).
-		Width(width - 1).
-		Render(strings.Repeat(" ", width-1))
+	var content string
+	if isEventStart {
+		title := util.TruncateText(eventInCell.Summary, width-3)
+		content = lipgloss.NewStyle().
+			Background(color).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Bold(true).
+			Width(width - 1).
+			Padding(0, 1).
+			Render(title)
+	} else {
+		content = lipgloss.NewStyle().
+			Background(color).
+			Width(width - 1).
+			Render(strings.Repeat(" ", width-1))
+	}
 	return borderStyle + content
 }
 
