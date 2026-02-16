@@ -9,11 +9,13 @@ import (
 func Execute() {
 	if len(os.Args) < 2 {
 		// No subcommand, run the main app
-		runApp()
+		runApp(false)
 		return
 	}
 
 	switch os.Args[1] {
+	case "demo", "--demo":
+		runApp(true)
 	case "setup":
 		runSetup()
 	case "auth":
@@ -34,6 +36,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  tipical              Start the calendar app")
+	fmt.Println("  tipical --demo        Start with demo data")
 	fmt.Println("  tipical setup        Run the setup wizard")
 	fmt.Println("  tipical auth add     Add a new calendar")
 	fmt.Println("  tipical auth test    Test calendar connections")

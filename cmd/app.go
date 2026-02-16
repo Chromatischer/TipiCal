@@ -11,7 +11,7 @@ import (
 	"github.com/tipical/tipical/ui"
 )
 
-func runApp() {
+func runApp(demo bool) {
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
@@ -23,7 +23,7 @@ func runApp() {
 
 	// Build CalDAV sync manager if calendars are configured
 	var syncMgr *caldav.Sync
-	if len(cfg.Calendars) > 0 {
+	if !demo && len(cfg.Calendars) > 0 {
 		// Create cache
 		cache, err := caldav.NewCache(cfg.Sync.CacheDir)
 		if err != nil {
