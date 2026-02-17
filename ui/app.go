@@ -36,6 +36,12 @@ type syncResultMsg struct {
 	err error
 }
 
+// upsyncResultMsg carries the result of a create/update/delete upsync operation.
+type upsyncResultMsg struct {
+	action string // "create", "update", "delete"
+	err    error
+}
+
 // App is the root Bubble Tea model.
 type App struct {
 	cfg    *config.Config
@@ -142,6 +148,14 @@ func (a *App) calendarNames() []string {
 	return names
 }
 
+// isReadOnly returns true if the given event's calendar is read-only.
+func (a *App) isReadOnly(event *ical.Event) bool {
+	if event.CalendarID >= 0 && event.CalendarID < len(a.store.Calendars) {
+		return a.store.Calendars[event.CalendarID].ReadOnly
+	}
+	return false
+}
+
 // selectedEvent returns the selected event for the active view.
 func (a *App) selectedEvent() *ical.Event {
 	// For views with event-level selection, use their cursor
@@ -226,6 +240,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.statusbar.SetSyncState("synced")
 			a.statusbar.SetMessage("")
+			a.refreshTimeGridViews()
 		}
 		// Schedule next sync
 		var cmd tea.Cmd
@@ -233,6 +248,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = a.scheduleSyncTick()
 		}
 		return a, cmd
+
+	case upsyncResultMsg:
+		if msg.err != nil {
+			a.statusbar.SetMessage("Sync failed: " + msg.err.Error())
+		} else {
+			switch msg.action {
+			case "create":
+				a.statusbar.SetMessage("Event created and synced")
+			case "update":
+				a.statusbar.SetMessage("Event updated and synced")
+			case "delete":
+				a.statusbar.SetMessage("Event deleted and synced")
+			}
+		}
+		return a, nil
 
 	case waveTickMsg:
 		// Advance the wave animation
@@ -266,8 +296,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check for result
 			if result := a.eventEditor.Result(); result != nil {
-				a.handleEditorResult(result)
+				cmd := a.handleEditorResult(result)
 				a.eventEditor.ClearResult()
+				return a, cmd
 			}
 			return a, nil
 		}
@@ -334,16 +365,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "e":
 			if event := a.selectedEvent(); event != nil {
-				a.eventEditor.OpenEdit(event, a.calendarNames())
-				a.eventEditor.SetSize(a.width, a.height-3)
+				if a.isReadOnly(event) {
+					a.statusbar.SetMessage("Calendar is read-only")
+				} else {
+					a.eventEditor.OpenEdit(event, a.calendarNames())
+					a.eventEditor.SetSize(a.width, a.height-3)
+				}
 			} else {
 				a.statusbar.SetMessage("No event selected")
 			}
 
 		case "D":
 			if event := a.selectedEvent(); event != nil {
-				a.eventEditor.OpenDelete(event)
-				a.eventEditor.SetSize(a.width, a.height-3)
+				if a.isReadOnly(event) {
+					a.statusbar.SetMessage("Calendar is read-only")
+				} else {
+					a.eventEditor.OpenDelete(event)
+					a.eventEditor.SetSize(a.width, a.height-3)
+				}
 			} else {
 				a.statusbar.SetMessage("No event selected")
 			}
@@ -370,22 +409,68 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-func (a *App) handleEditorResult(result *editor.EditorResult) {
+func (a *App) handleEditorResult(result *editor.EditorResult) tea.Cmd {
 	switch result.Action {
 	case "create":
 		if result.Event != nil {
+			calID := result.Event.CalendarID
+			if calID >= 0 && calID < len(a.store.Calendars) {
+				if a.store.Calendars[calID].ReadOnly {
+					a.statusbar.SetMessage("Calendar is read-only")
+					return nil
+				}
+				result.Event.CalPath = a.store.Calendars[calID].CalPath
+			}
 			a.store.AddEvent(result.Event)
+			a.refreshTimeGridViews()
+			a.statusbar.SetMessage("Creating event...")
+			if a.syncMgr != nil {
+				event := result.Event
+				return func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					err := a.syncMgr.CreateEvent(ctx, event)
+					return upsyncResultMsg{action: "create", err: err}
+				}
+			}
 			a.statusbar.SetMessage("Event created: " + result.Event.Summary)
 		}
 	case "update":
 		if result.Event != nil {
+			// Preserve CalDAV paths from the original event
+			if orig := a.store.FindEvent(result.Event.UID); orig != nil {
+				result.Event.CalPath = orig.CalPath
+				result.Event.ResourcePath = orig.ResourcePath
+			}
 			a.store.RemoveEvent(result.Event.UID)
 			a.store.AddEvent(result.Event)
+			a.refreshTimeGridViews()
+			a.statusbar.SetMessage("Updating event...")
+			if a.syncMgr != nil {
+				event := result.Event
+				return func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					err := a.syncMgr.UpdateEvent(ctx, event)
+					return upsyncResultMsg{action: "update", err: err}
+				}
+			}
 			a.statusbar.SetMessage("Event updated: " + result.Event.Summary)
 		}
 	case "delete":
 		if result.Event != nil {
 			a.store.RemoveEvent(result.Event.UID)
+			a.refreshTimeGridViews()
+			a.statusbar.SetMessage("Deleting event...")
+			if a.syncMgr != nil {
+				event := result.Event
+				return func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					err := a.syncMgr.DeleteEvent(ctx, event)
+					return upsyncResultMsg{action: "delete", err: err}
+				}
+			}
 			a.statusbar.SetMessage("Event deleted: " + result.Event.Summary)
 		}
 	case "edit-from-detail":
@@ -401,6 +486,15 @@ func (a *App) handleEditorResult(result *editor.EditorResult) {
 	case "cancel":
 		a.statusbar.SetMessage("")
 	}
+	return nil
+}
+
+// refreshTimeGridViews forces WeekView, ThreeDayView, and DayView to re-snapshot
+// events from the store so changes appear immediately without waiting for a sync.
+func (a *App) refreshTimeGridViews() {
+	a.weekView.RefreshEvents()
+	a.threeDayView.RefreshEvents()
+	a.dayView.RefreshEvents()
 }
 
 func (a *App) switchView(vt config.ViewType) {
