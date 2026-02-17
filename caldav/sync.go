@@ -423,6 +423,21 @@ func (s *Sync) CreateEvent(ctx context.Context, event *ical.Event) error {
 		event.ResourcePath = resourcePath
 	}
 	event.CalPath = calPath
+
+	var buf bytes.Buffer
+	if err := goical.NewEncoder(&buf).Encode(cal); err == nil {
+		etag := ""
+		if result != nil {
+			etag = result.ETag
+		}
+		s.cache.Put(calPath, CacheEntry{
+			Path:      event.ResourcePath,
+			ETag:      etag,
+			Data:      buf.String(),
+			FetchedAt: time.Now(),
+		})
+	}
+
 	return nil
 }
 
@@ -436,13 +451,35 @@ func (s *Sync) UpdateEvent(ctx context.Context, event *ical.Event) error {
 		return s.CreateEvent(ctx, event)
 	}
 
+	calPath := event.CalPath
+	if calPath == "" {
+		if event.CalendarID < len(s.store.Calendars) {
+			calPath = s.store.Calendars[event.CalendarID].CalPath
+		}
+	}
+
 	cal := eventToIcal(event)
 	obj := &caldav.CalendarObject{Data: cal}
 
-	_, err := client.PutEvent(ctx, event.ResourcePath, obj)
+	result, err := client.PutEvent(ctx, event.ResourcePath, obj)
 	if err != nil {
 		return fmt.Errorf("updating event on server: %w", err)
 	}
+
+	var buf bytes.Buffer
+	if err := goical.NewEncoder(&buf).Encode(cal); err == nil {
+		etag := ""
+		if result != nil {
+			etag = result.ETag
+		}
+		s.cache.Put(calPath, CacheEntry{
+			Path:      event.ResourcePath,
+			ETag:      etag,
+			Data:      buf.String(),
+			FetchedAt: time.Now(),
+		})
+	}
+
 	return nil
 }
 
@@ -458,5 +495,16 @@ func (s *Sync) DeleteEvent(ctx context.Context, event *ical.Event) error {
 	if err := client.DeleteEvent(ctx, event.ResourcePath); err != nil {
 		return fmt.Errorf("deleting event from server: %w", err)
 	}
+
+	calPath := event.CalPath
+	if calPath == "" {
+		if event.CalendarID < len(s.store.Calendars) {
+			calPath = s.store.Calendars[event.CalendarID].CalPath
+		}
+	}
+	if calPath != "" {
+		s.cache.Remove(calPath, event.ResourcePath)
+	}
+
 	return nil
 }
