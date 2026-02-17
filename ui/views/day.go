@@ -32,6 +32,11 @@ func NewDayView(theme *config.Theme, store *ical.Store, cfg *config.Config) *Day
 	return dv
 }
 
+// RefreshEvents rebuilds the time grid from the current store state.
+func (dv *DayView) RefreshEvents() {
+	dv.rebuildGrid()
+}
+
 func (dv *DayView) rebuildGrid() {
 	days := []time.Time{dv.selectedDay}
 	dv.grid = components.NewTimeGrid(dv.theme, days, dv.store, dv.use24h)

@@ -32,6 +32,11 @@ func NewThreeDayView(theme *config.Theme, store *ical.Store, cfg *config.Config)
 	return td
 }
 
+// RefreshEvents rebuilds the time grid from the current store state.
+func (td *ThreeDayView) RefreshEvents() {
+	td.rebuildGrid()
+}
+
 func (td *ThreeDayView) rebuildGrid() {
 	days := make([]time.Time, 3)
 	days[0] = td.selectedDay.AddDate(0, 0, -1) // yesterday

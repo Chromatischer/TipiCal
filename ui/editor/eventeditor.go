@@ -1,6 +1,8 @@
 package editor
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -448,7 +450,9 @@ func (ee *EventEditor) buildEventFromForm() *ical.Event {
 
 	uid := ee.editingUID
 	if uid == "" {
-		uid = fmt.Sprintf("tical-%d", time.Now().UnixNano())
+		b := make([]byte, 8)
+		rand.Read(b)
+		uid = fmt.Sprintf("tical-%d-%s", time.Now().UnixNano(), hex.EncodeToString(b))
 	}
 
 	return &ical.Event{

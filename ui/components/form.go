@@ -315,6 +315,11 @@ func (f *Form) View() string {
 		inputWidth = 10
 	}
 
+	// labelWidth = label Width(12) + MarginRight(1)
+	const labelWidth = 13
+	underlineStyle := lipgloss.NewStyle().Foreground(f.theme.Accent)
+	underlineLine := strings.Repeat(" ", labelWidth) + underlineStyle.Render(strings.Repeat("─", inputWidth))
+
 	for i, field := range f.fields {
 		isFocused := i == f.focused
 
@@ -323,15 +328,24 @@ func (f *Form) View() string {
 			label := labelStyle.Render(field.Label + ":")
 			input := f.renderSelect(field, inputWidth, isFocused)
 			lines = append(lines, label+input)
+			if isFocused {
+				lines = append(lines, underlineLine)
+			}
 			lines = append(lines, "")
 		case FieldTextArea:
 			rendered := f.renderTextArea(field, inputWidth, isFocused, labelStyle)
 			lines = append(lines, rendered...)
+			if isFocused {
+				lines = append(lines, underlineLine)
+			}
 			lines = append(lines, "")
 		default:
 			label := labelStyle.Render(field.Label + ":")
 			input := f.renderTextInput(field, inputWidth, isFocused)
 			lines = append(lines, label+input)
+			if isFocused {
+				lines = append(lines, underlineLine)
+			}
 			lines = append(lines, "")
 		}
 	}
@@ -397,9 +411,7 @@ func (f *Form) renderTextInput(field FormField, width int, focused bool) string 
 	if focused {
 		style = style.
 			Background(f.theme.Surface).
-			Foreground(f.theme.Text).
-			Border(lipgloss.NormalBorder(), false, false, true, false).
-			BorderForeground(f.theme.Accent)
+			Foreground(f.theme.Text)
 
 		// Show cursor
 		runes := []rune(value)
@@ -447,14 +459,6 @@ func (f *Form) renderTextArea(field FormField, width int, focused bool, labelSty
 			style = style.
 				Background(f.theme.Surface).
 				Foreground(f.theme.Text)
-			if i == 0 {
-				// Top border for first line - no underline
-			}
-			if i == len(valueLines)-1 {
-				style = style.
-					Border(lipgloss.NormalBorder(), false, false, true, false).
-					BorderForeground(f.theme.Accent)
-			}
 
 			// Show cursor on the active line
 			if i == cursorLine {
@@ -498,9 +502,7 @@ func (f *Form) renderSelect(field FormField, width int, focused bool) string {
 		style = style.
 			Background(f.theme.Surface).
 			Foreground(f.theme.Accent).
-			Bold(true).
-			Border(lipgloss.NormalBorder(), false, false, true, false).
-			BorderForeground(f.theme.Accent)
+			Bold(true)
 	} else {
 		style = style.
 			Background(f.theme.SurfaceAlt).

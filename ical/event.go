@@ -18,6 +18,10 @@ type Event struct {
 	Status         string // CONFIRMED, TENTATIVE, CANCELLED
 	Recurring      bool
 	RecurrenceRule string // RRULE string (e.g., "FREQ=DAILY;INTERVAL=1")
+
+	// CalDAV metadata for upsync
+	CalPath      string // CalDAV collection path (e.g., "/cal.php/calendars/user/personal/")
+	ResourcePath string // CalDAV resource path (e.g., "/cal.php/.../uid.ics")
 }
 
 // Duration returns the duration of the event.
@@ -217,10 +221,13 @@ func (e *Event) OverlapsWith(start, end time.Time) bool {
 
 // CalendarInfo represents a discovered sub-calendar at runtime.
 type CalendarInfo struct {
-	ID     int    // unique sequential ID
-	Name   string // discovered calendar name (from CalDAV)
-	Color  string // resolved hex color
-	Source string // parent config calendar name (account name)
+	ID          int    // unique sequential ID
+	Name        string // discovered calendar name (from CalDAV)
+	Color       string // resolved hex color
+	Source      string // parent config calendar name (account name)
+	CalPath     string // CalDAV collection path for upsync
+	ConfigIndex int    // index into config.Calendars (maps to Client)
+	ReadOnly    bool   // from calendar config
 }
 
 // Store holds events in memory and provides filtering.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	goical "github.com/emersion/go-ical"
+	"github.com/emersion/go-webdav/caldav"
 	"github.com/tipical/tipical/config"
 	"github.com/tipical/tipical/ical"
 )
@@ -95,10 +96,17 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 			calName = cal.Path
 		}
 
+		readOnly := false
+		if calIdx < len(s.cfg.Calendars) {
+			readOnly = s.cfg.Calendars[calIdx].ReadOnly
+		}
 		calID := s.store.RegisterCalendar(ical.CalendarInfo{
-			Name:   calName,
-			Color:  calColor,
-			Source: configName,
+			Name:        calName,
+			Color:       calColor,
+			Source:      configName,
+			CalPath:     cal.Path,
+			ConfigIndex: calIdx,
+			ReadOnly:    readOnly,
 		})
 
 		objects, err := client.FetchEvents(ctx, cal.Path, start, end)
@@ -128,8 +136,10 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 			}
 
 			for _, event := range parsed {
-				// Assign calendar color
+				// Assign calendar color and CalDAV paths
 				event.Color = calColor
+				event.CalPath = cal.Path
+				event.ResourcePath = obj.Path
 
 				// Expand recurring events
 				if event.Recurring {
@@ -178,9 +188,16 @@ func (s *Sync) LoadFromCache() {
 			continue
 		}
 
+		readOnly := false
+		if idx.ConfigIndex < len(s.cfg.Calendars) {
+			readOnly = s.cfg.Calendars[idx.ConfigIndex].ReadOnly
+		}
 		calID := s.store.RegisterCalendar(ical.CalendarInfo{
-			Name:  idx.CalendarName,
-			Color: idx.CalendarColor,
+			Name:        idx.CalendarName,
+			Color:       idx.CalendarColor,
+			CalPath:     idx.CalendarURL,
+			ConfigIndex: idx.ConfigIndex,
+			ReadOnly:    readOnly,
 		})
 
 		for _, entry := range idx.Entries {
@@ -201,6 +218,8 @@ func (s *Sync) LoadFromCache() {
 
 			for _, event := range parsed {
 				event.Color = idx.CalendarColor
+				event.CalPath = idx.CalendarURL
+				event.ResourcePath = entry.Path
 
 				if event.Recurring {
 					expanded := s.expandRecurring(event, cal, start, end)
@@ -303,4 +322,189 @@ func parseCalendarObject(cal *goical.Calendar, calendarIndex int) ([]*ical.Event
 	}
 
 	return events, nil
+}
+
+// clientForCalendar returns the Client responsible for the given CalendarID.
+func (s *Sync) clientForCalendar(calendarID int) *Client {
+	if calendarID < 0 || calendarID >= len(s.store.Calendars) {
+		return nil
+	}
+	configIdx := s.store.Calendars[calendarID].ConfigIndex
+	for _, c := range s.clients {
+		if c.CalendarIndex() == configIdx {
+			return c
+		}
+	}
+	return nil
+}
+
+// eventToIcal converts an ical.Event to a go-ical Calendar object ready for PUT.
+func eventToIcal(event *ical.Event) *goical.Calendar {
+	cal := goical.NewCalendar()
+	cal.Props.SetText(goical.PropVersion, "2.0")
+	cal.Props.SetText(goical.PropProductID, "-//TipiCal//TipiCal//EN")
+
+	comp := goical.NewComponent(goical.CompEvent)
+	comp.Props.SetText(goical.PropUID, event.UID)
+	comp.Props.SetText(goical.PropSummary, event.Summary)
+
+	if event.Description != "" {
+		comp.Props.SetText(goical.PropDescription, event.Description)
+	}
+	if event.Location != "" {
+		comp.Props.SetText(goical.PropLocation, event.Location)
+	}
+	if event.Status != "" {
+		comp.Props.SetText(goical.PropStatus, event.Status)
+	}
+
+	now := time.Now().UTC()
+	dtstamp := goical.NewProp(goical.PropDateTimeStamp)
+	dtstamp.SetDateTime(now)
+	comp.Props.Set(dtstamp)
+
+	if event.AllDay {
+		dtstart := goical.NewProp(goical.PropDateTimeStart)
+		dtstart.Params.Set("VALUE", "DATE")
+		dtstart.Value = event.Start.Format("20060102")
+		comp.Props.Set(dtstart)
+
+		dtend := goical.NewProp(goical.PropDateTimeEnd)
+		dtend.Params.Set("VALUE", "DATE")
+		dtend.Value = event.End.Format("20060102")
+		comp.Props.Set(dtend)
+	} else {
+		dtstart := goical.NewProp(goical.PropDateTimeStart)
+		dtstart.SetDateTime(event.Start.UTC())
+		comp.Props.Set(dtstart)
+
+		dtend := goical.NewProp(goical.PropDateTimeEnd)
+		dtend.SetDateTime(event.End.UTC())
+		comp.Props.Set(dtend)
+	}
+
+	cal.Children = append(cal.Children, comp)
+	return cal
+}
+
+// CreateEvent pushes a newly created event to the CalDAV server.
+func (s *Sync) CreateEvent(ctx context.Context, event *ical.Event) error {
+	client := s.clientForCalendar(event.CalendarID)
+	if client == nil {
+		return fmt.Errorf("no client found for calendar %d", event.CalendarID)
+	}
+
+	calPath := event.CalPath
+	if calPath == "" {
+		if event.CalendarID < len(s.store.Calendars) {
+			calPath = s.store.Calendars[event.CalendarID].CalPath
+		}
+	}
+	if calPath == "" {
+		return fmt.Errorf("no calendar path for calendar %d", event.CalendarID)
+	}
+
+	resourcePath := calPath
+	if len(resourcePath) > 0 && resourcePath[len(resourcePath)-1] != '/' {
+		resourcePath += "/"
+	}
+	resourcePath += event.UID + ".ics"
+
+	cal := eventToIcal(event)
+	obj := &caldav.CalendarObject{Data: cal}
+
+	result, err := client.PutEvent(ctx, resourcePath, obj)
+	if err != nil {
+		return fmt.Errorf("creating event on server: %w", err)
+	}
+	if result != nil && result.Path != "" {
+		event.ResourcePath = result.Path
+	} else {
+		event.ResourcePath = resourcePath
+	}
+	event.CalPath = calPath
+
+	var buf bytes.Buffer
+	if err := goical.NewEncoder(&buf).Encode(cal); err == nil {
+		etag := ""
+		if result != nil {
+			etag = result.ETag
+		}
+		s.cache.Put(calPath, CacheEntry{
+			Path:      event.ResourcePath,
+			ETag:      etag,
+			Data:      buf.String(),
+			FetchedAt: time.Now(),
+		})
+	}
+
+	return nil
+}
+
+// UpdateEvent pushes a modified event to the CalDAV server.
+func (s *Sync) UpdateEvent(ctx context.Context, event *ical.Event) error {
+	client := s.clientForCalendar(event.CalendarID)
+	if client == nil {
+		return fmt.Errorf("no client found for calendar %d", event.CalendarID)
+	}
+	if event.ResourcePath == "" {
+		return s.CreateEvent(ctx, event)
+	}
+
+	calPath := event.CalPath
+	if calPath == "" {
+		if event.CalendarID < len(s.store.Calendars) {
+			calPath = s.store.Calendars[event.CalendarID].CalPath
+		}
+	}
+
+	cal := eventToIcal(event)
+	obj := &caldav.CalendarObject{Data: cal}
+
+	result, err := client.PutEvent(ctx, event.ResourcePath, obj)
+	if err != nil {
+		return fmt.Errorf("updating event on server: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := goical.NewEncoder(&buf).Encode(cal); err == nil {
+		etag := ""
+		if result != nil {
+			etag = result.ETag
+		}
+		s.cache.Put(calPath, CacheEntry{
+			Path:      event.ResourcePath,
+			ETag:      etag,
+			Data:      buf.String(),
+			FetchedAt: time.Now(),
+		})
+	}
+
+	return nil
+}
+
+// DeleteEvent removes an event from the CalDAV server.
+func (s *Sync) DeleteEvent(ctx context.Context, event *ical.Event) error {
+	if event.ResourcePath == "" {
+		return nil
+	}
+	client := s.clientForCalendar(event.CalendarID)
+	if client == nil {
+		return fmt.Errorf("no client found for calendar %d", event.CalendarID)
+	}
+	if err := client.DeleteEvent(ctx, event.ResourcePath); err != nil {
+		return fmt.Errorf("deleting event from server: %w", err)
+	}
+
+	calPath := event.CalPath
+	if calPath == "" {
+		if event.CalendarID < len(s.store.Calendars) {
+			calPath = s.store.Calendars[event.CalendarID].CalPath
+		}
+	}
+	if calPath != "" {
+		s.cache.Remove(calPath, event.ResourcePath)
+	}
+
+	return nil
 }

@@ -35,6 +35,11 @@ func NewWeekView(theme *config.Theme, store *ical.Store, cfg *config.Config) *We
 	return wv
 }
 
+// RefreshEvents rebuilds the time grid from the current store state.
+func (wv *WeekView) RefreshEvents() {
+	wv.rebuildGrid()
+}
+
 func (wv *WeekView) rebuildGrid() {
 	weekStart := util.WeekStart(wv.selectedDay, wv.startMonday)
 	days := make([]time.Time, 7)
