@@ -420,6 +420,13 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 	if secondary != nil && util.SameDay(secondary.Start, day) && !secondary.Start.Before(subRowEnd) {
 		secondary = nil
 	}
+	// Filter events that have already ended before this sub-row
+	if primary != nil && !primary.End.After(subRowStart) {
+		primary = nil
+	}
+	if secondary != nil && !secondary.End.After(subRowStart) {
+		secondary = nil
+	}
 
 	borderStyle := lipgloss.NewStyle().
 		Foreground(tg.theme.Border).
@@ -473,6 +480,26 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 			overlapWidth = 1
 		}
 
+		// Badge: +N on the bottom-most row of the content event when a same-calendar
+		// event with the same start time is hidden in the sidebar.
+		var overlapBadge string
+		if sidebarEvent != nil && sidebarEvent.CalendarID == contentEvent.CalendarID &&
+			sidebarEvent.Start.Equal(contentEvent.Start) &&
+			!contentEvent.End.After(subRowEnd) {
+			overlapBadge = "+1"
+		} else if sidebarEvent == nil && !contentEvent.End.After(subRowEnd) {
+			// Content event is alone in this cell (its overlap partner ended earlier)
+			// but a same-calendar same-start-time event may still overlap it.
+			for _, e := range events {
+				if !e.AllDay && e.UID != contentEvent.UID &&
+					e.CalendarID == contentEvent.CalendarID &&
+					e.Start.Equal(contentEvent.Start) {
+					overlapBadge = "+1"
+					break
+				}
+			}
+		}
+
 		// Sidebar event selected: selection marker on left, sidebars, then content
 		if isSidebarSelected {
 			selLeft := lipgloss.NewStyle().
@@ -482,23 +509,8 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 			if contentWidth < 1 {
 				contentWidth = 1
 			}
-			var contentStr string
-			if isContentStart {
-				title := util.TruncateText(contentEvent.Summary, contentWidth-2)
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Foreground(lipgloss.Color("#FFFFFF")).
-					Bold(true).
-					Width(contentWidth).
-					Padding(0, 1).
-					Render(title)
-			} else {
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Width(contentWidth).
-					Render(strings.Repeat(" ", contentWidth))
-			}
-			return borderStyle + selLeft + sidebars + extraStr + contentStr
+			return borderStyle + selLeft + sidebars + extraStr +
+				tg.buildOverlapContent(contentEvent, contentColor, isContentStart, contentWidth, overlapBadge, false)
 		}
 
 		// Content event selected
@@ -513,23 +525,9 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 			selRight := lipgloss.NewStyle().
 				Foreground(tg.theme.Selected).
 				Render("▌")
-			var contentStr string
-			if isContentStart {
-				title := util.TruncateText(contentEvent.Summary, contentWidth-2)
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Foreground(lipgloss.Color("#FFFFFF")).
-					Bold(true).
-					Width(contentWidth).
-					Padding(0, 1).
-					Render(title)
-			} else {
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Width(contentWidth).
-					Render(strings.Repeat(" ", contentWidth))
-			}
-			return borderStyle + sidebars + extraStr + selLeft + contentStr + selRight
+			return borderStyle + sidebars + extraStr + selLeft +
+				tg.buildOverlapContent(contentEvent, contentColor, isContentStart, contentWidth, overlapBadge, true) +
+				selRight
 		}
 
 		// No selection on either
@@ -537,23 +535,8 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 		if contentWidth < 1 {
 			contentWidth = 1
 		}
-		var contentStr string
-		if isContentStart {
-			title := util.TruncateText(contentEvent.Summary, contentWidth-2)
-			contentStr = lipgloss.NewStyle().
-				Background(contentColor).
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Bold(true).
-				Width(contentWidth).
-				Padding(0, 1).
-				Render(title)
-		} else {
-			contentStr = lipgloss.NewStyle().
-				Background(contentColor).
-				Width(contentWidth).
-				Render(strings.Repeat(" ", contentWidth))
-		}
-		return borderStyle + sidebars + extraStr + contentStr
+		return borderStyle + sidebars + extraStr +
+			tg.buildOverlapContent(contentEvent, contentColor, isContentStart, contentWidth, overlapBadge, false)
 	}
 
 	// Single event rendering (no overlap)
@@ -581,56 +564,32 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 		isEventStart = hour == tg.startHour && subRow == 0
 	}
 
-	if isEventStart {
-		if isSelectedEvent {
-			title := util.TruncateText(eventInCell.Summary, width-5)
-			content := lipgloss.NewStyle().
-				Background(color).
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Bold(true).
-				Width(width-3).
-				Padding(0, 1).
-				Render(title)
-			leftBorder := lipgloss.NewStyle().
-				Foreground(tg.theme.Selected).
-				Render("▐")
-			rightBorder := lipgloss.NewStyle().
-				Foreground(tg.theme.Selected).
-				Render("▌")
-			return borderStyle + leftBorder + content + rightBorder
+	// Badge on the bottom row when a same-calendar same-start-time event also occupies this block
+	var badge string
+	if !eventInCell.End.After(subRowEnd) {
+		for _, e := range events {
+			if !e.AllDay && e.UID != eventInCell.UID &&
+				e.CalendarID == eventInCell.CalendarID &&
+				e.Start.Equal(eventInCell.Start) {
+				badge = "+1"
+				break
+			}
 		}
-
-		title := util.TruncateText(eventInCell.Summary, width-3)
-		content := lipgloss.NewStyle().
-			Background(color).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Bold(true).
-			Width(width-1).
-			Padding(0, 1).
-			Render(title)
-		return borderStyle + content
 	}
 
-	// Continuation of event
 	if isSelectedEvent {
-		content := lipgloss.NewStyle().
-			Background(color).
-			Width(width - 3).
-			Render(strings.Repeat(" ", width-3))
 		leftBorder := lipgloss.NewStyle().
 			Foreground(tg.theme.Selected).
 			Render("▐")
 		rightBorder := lipgloss.NewStyle().
 			Foreground(tg.theme.Selected).
 			Render("▌")
-		return borderStyle + leftBorder + content + rightBorder
+		return borderStyle + leftBorder +
+			tg.buildOverlapContent(eventInCell, color, isEventStart, width-3, badge, true) +
+			rightBorder
 	}
 
-	content := lipgloss.NewStyle().
-		Background(color).
-		Width(width - 1).
-		Render(strings.Repeat(" ", width-1))
-	return borderStyle + content
+	return borderStyle + tg.buildOverlapContent(eventInCell, color, isEventStart, width-1, badge, false)
 }
 
 // renderContinuationCell renders a sub-row cell within an hour slot.
@@ -649,6 +608,13 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		primary = nil
 	}
 	if secondary != nil && util.SameDay(secondary.Start, day) && !secondary.Start.Before(subRowEnd) {
+		secondary = nil
+	}
+	// Filter events that have already ended before this sub-row
+	if primary != nil && !primary.End.After(subRowStart) {
+		primary = nil
+	}
+	if secondary != nil && !secondary.End.After(subRowStart) {
 		secondary = nil
 	}
 
@@ -703,6 +669,24 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 			overlapWidth = 1
 		}
 
+		// Badge: +N on the bottom-most row of the content event when a same-calendar
+		// event with the same start time is hidden in the sidebar.
+		var overlapBadge string
+		if sidebarEvent != nil && sidebarEvent.CalendarID == contentEvent.CalendarID &&
+			sidebarEvent.Start.Equal(contentEvent.Start) &&
+			!contentEvent.End.After(subRowEnd) {
+			overlapBadge = "+1"
+		} else if sidebarEvent == nil && !contentEvent.End.After(subRowEnd) {
+			for _, e := range events {
+				if !e.AllDay && e.UID != contentEvent.UID &&
+					e.CalendarID == contentEvent.CalendarID &&
+					e.Start.Equal(contentEvent.Start) {
+					overlapBadge = "+1"
+					break
+				}
+			}
+		}
+
 		// Sidebar event selected: selection marker on left, sidebars, then content
 		if isSidebarSelected {
 			selLeft := lipgloss.NewStyle().
@@ -712,23 +696,8 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 			if contentWidth < 1 {
 				contentWidth = 1
 			}
-			var contentStr string
-			if isContentStart {
-				title := util.TruncateText(contentEvent.Summary, contentWidth-2)
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Foreground(lipgloss.Color("#FFFFFF")).
-					Bold(true).
-					Width(contentWidth).
-					Padding(0, 1).
-					Render(title)
-			} else {
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Width(contentWidth).
-					Render(strings.Repeat(" ", contentWidth))
-			}
-			return borderStyle + selLeft + sidebars + extraStr + contentStr
+			return borderStyle + selLeft + sidebars + extraStr +
+				tg.buildOverlapContent(contentEvent, contentColor, isContentStart, contentWidth, overlapBadge, false)
 		}
 
 		// Content event selected
@@ -743,23 +712,9 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 			selRight := lipgloss.NewStyle().
 				Foreground(tg.theme.Selected).
 				Render("▌")
-			var contentStr string
-			if isContentStart {
-				title := util.TruncateText(contentEvent.Summary, contentWidth-2)
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Foreground(lipgloss.Color("#FFFFFF")).
-					Bold(true).
-					Width(contentWidth).
-					Padding(0, 1).
-					Render(title)
-			} else {
-				contentStr = lipgloss.NewStyle().
-					Background(contentColor).
-					Width(contentWidth).
-					Render(strings.Repeat(" ", contentWidth))
-			}
-			return borderStyle + sidebars + extraStr + selLeft + contentStr + selRight
+			return borderStyle + sidebars + extraStr + selLeft +
+				tg.buildOverlapContent(contentEvent, contentColor, isContentStart, contentWidth, overlapBadge, true) +
+				selRight
 		}
 
 		// No selection
@@ -767,23 +722,8 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		if contentWidth < 1 {
 			contentWidth = 1
 		}
-		var contentStr string
-		if isContentStart {
-			title := util.TruncateText(contentEvent.Summary, contentWidth-2)
-			contentStr = lipgloss.NewStyle().
-				Background(contentColor).
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Bold(true).
-				Width(contentWidth).
-				Padding(0, 1).
-				Render(title)
-		} else {
-			contentStr = lipgloss.NewStyle().
-				Background(contentColor).
-				Width(contentWidth).
-				Render(strings.Repeat(" ", contentWidth))
-		}
-		return borderStyle + sidebars + extraStr + contentStr
+		return borderStyle + sidebars + extraStr +
+			tg.buildOverlapContent(contentEvent, contentColor, isContentStart, contentWidth, overlapBadge, false)
 	}
 
 	// Single event rendering
@@ -811,49 +751,32 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		isEventStart = hour == tg.startHour && subRow == 0
 	}
 
-	if isSelectedEvent {
-		var content string
-		if isEventStart {
-			title := util.TruncateText(eventInCell.Summary, width-5)
-			content = lipgloss.NewStyle().
-				Background(color).
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Bold(true).
-				Width(width - 3).
-				Padding(0, 1).
-				Render(title)
-		} else {
-			content = lipgloss.NewStyle().
-				Background(color).
-				Width(width - 3).
-				Render(strings.Repeat(" ", width-3))
+	// Badge on the bottom row when a same-calendar same-start-time event also occupies this block
+	var badge string
+	if !eventInCell.End.After(subRowEnd) {
+		for _, e := range events {
+			if !e.AllDay && e.UID != eventInCell.UID &&
+				e.CalendarID == eventInCell.CalendarID &&
+				e.Start.Equal(eventInCell.Start) {
+				badge = "+1"
+				break
+			}
 		}
+	}
+
+	if isSelectedEvent {
 		leftBorder := lipgloss.NewStyle().
 			Foreground(tg.theme.Selected).
 			Render("▐")
 		rightBorder := lipgloss.NewStyle().
 			Foreground(tg.theme.Selected).
 			Render("▌")
-		return borderStyle + leftBorder + content + rightBorder
+		return borderStyle + leftBorder +
+			tg.buildOverlapContent(eventInCell, color, isEventStart, width-3, badge, true) +
+			rightBorder
 	}
 
-	var content string
-	if isEventStart {
-		title := util.TruncateText(eventInCell.Summary, width-3)
-		content = lipgloss.NewStyle().
-			Background(color).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Bold(true).
-			Width(width - 1).
-			Padding(0, 1).
-			Render(title)
-	} else {
-		content = lipgloss.NewStyle().
-			Background(color).
-			Width(width - 1).
-			Render(strings.Repeat(" ", width-1))
-	}
-	return borderStyle + content
+	return borderStyle + tg.buildOverlapContent(eventInCell, color, isEventStart, width-1, badge, false)
 }
 
 // renderAllDaySection renders all-day events in a compact bar above the time grid.
@@ -1116,6 +1039,68 @@ type overlapInfo struct {
 	// track the secondary's color/UID so an additional sidebar marker can be drawn.
 	extraOverlapColors []lipgloss.Color
 	extraOverlapUIDs   []string
+}
+
+// buildOverlapContent renders the content area for the "content" event in an overlap
+// cell. badge is non-empty when a +N indicator should appear at the right edge.
+// isStart indicates this sub-row is the event's first (shows title); otherwise a
+// plain coloured background is rendered.
+func (tg *TimeGrid) buildOverlapContent(e *ical.Event, color lipgloss.Color, isStart bool, width int, badge string, rightPad bool) string {
+	if badge != "" {
+		badge = "  " + badge
+		if rightPad {
+			badge += " "
+		}
+	}
+	badgeW := len(badge) // badge is always ASCII
+	if badgeW > 0 && width < badgeW+3 {
+		badge = ""
+		badgeW = 0
+	}
+	if isStart {
+		innerW := width - 2 // subtract Padding(0, 1)
+		if badgeW > 0 {
+			innerW -= badgeW
+		}
+		if innerW < 0 {
+			innerW = 0
+		}
+		title := util.TruncateText(e.Summary, innerW)
+		var inner string
+		if badgeW > 0 {
+			spaces := width - 2 - util.DisplayWidth(title) - badgeW
+			if spaces < 0 {
+				spaces = 0
+			}
+			inner = title + strings.Repeat(" ", spaces) + badge
+		} else {
+			inner = title
+		}
+		return lipgloss.NewStyle().
+			Background(color).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Bold(true).
+			Width(width).
+			Padding(0, 1).
+			Render(inner)
+	}
+	// Continuation row (no title)
+	if badgeW > 0 {
+		spaces := width - badgeW
+		if spaces < 0 {
+			spaces = 0
+		}
+		return lipgloss.NewStyle().
+			Background(color).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Bold(true).
+			Width(width).
+			Render(strings.Repeat(" ", spaces) + badge)
+	}
+	return lipgloss.NewStyle().
+		Background(color).
+		Width(width).
+		Render(strings.Repeat(" ", width))
 }
 
 // findOverlapInfo pre-computes overlap relationships for a day's events.
