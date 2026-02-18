@@ -33,27 +33,28 @@ func NewSync(clients []*Client, cache *Cache, store *ical.Store, theme *config.T
 	}
 }
 
-// SyncAll syncs all configured calendars. It clears the store first
-// to avoid stale events from previous syncs.
+// SyncAll syncs all configured calendars.
 func (s *Sync) SyncAll(ctx context.Context) error {
-	// Clear calendar registry before rebuilding
-	s.store.ClearCalendars()
-
-	// Collect all new events, then replace the store atomically
+	var allCalendars []ical.CalendarInfo
 	var allEvents []*ical.Event
 
 	var syncErrors []error
 	for _, client := range s.clients {
-		events, err := s.syncClient(ctx, client)
+		cals, events, err := s.syncClient(ctx, client, len(allCalendars))
 		if err != nil {
 			syncErrors = append(syncErrors, fmt.Errorf("syncing calendar %d: %w", client.CalendarIndex(), err))
 			continue
 		}
+		allCalendars = append(allCalendars, cals...)
 		allEvents = append(allEvents, events...)
 	}
 
-	// Replace store contents atomically
-	s.store.Events = allEvents
+	// Only replace store contents if at least one client succeeded,
+	// preserving cached data if all clients fail (e.g., offline).
+	if len(syncErrors) < len(s.clients) {
+		s.store.Calendars = allCalendars
+		s.store.Events = allEvents
+	}
 
 	// Return first error if any, but only after we've loaded what we can
 	if len(syncErrors) > 0 {
@@ -62,11 +63,11 @@ func (s *Sync) SyncAll(ctx context.Context) error {
 	return nil
 }
 
-func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, error) {
+func (s *Sync) syncClient(ctx context.Context, client *Client, calOffset int) ([]ical.CalendarInfo, []*ical.Event, error) {
 	// Discover calendars
 	calendars, err := client.DiscoverCalendars(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Get the config calendar name for grouping
@@ -83,12 +84,14 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 	start := now.AddDate(0, -1, 0) // 1 month back
 	end := now.AddDate(0, 3, 0)    // 3 months forward
 
+	var localCals []ical.CalendarInfo
 	var events []*ical.Event
 	for _, cal := range calendars {
-		// Register each discovered sub-calendar with a unique ID
+		calID := calOffset + len(localCals)
+
 		calColor := configColor
 		if calColor == "" {
-			calColor = string(s.theme.CalendarColor(len(s.store.Calendars)))
+			calColor = string(s.theme.CalendarColor(calID))
 		}
 
 		calName := cal.Name
@@ -100,7 +103,8 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 		if calIdx < len(s.cfg.Calendars) {
 			readOnly = s.cfg.Calendars[calIdx].ReadOnly
 		}
-		calID := s.store.RegisterCalendar(ical.CalendarInfo{
+		localCals = append(localCals, ical.CalendarInfo{
+			ID:          calID,
 			Name:        calName,
 			Color:       calColor,
 			Source:      configName,
@@ -111,11 +115,11 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 
 		objects, err := client.FetchEvents(ctx, cal.Path, start, end)
 		if err != nil {
-			return nil, fmt.Errorf("fetching from %s: %w", cal.Path, err)
+			return nil, nil, fmt.Errorf("fetching from %s: %w", cal.Path, err)
 		}
 
 		// Store calendar metadata in cache
-		s.cache.SetIndexMeta(cal.Path, calName, calColor, calIdx)
+		s.cache.SetIndexMeta(cal.Path, calName, calColor, configName, calIdx)
 
 		for _, obj := range objects {
 			// Serialize iCal data for caching
@@ -152,7 +156,7 @@ func (s *Sync) syncClient(ctx context.Context, client *Client) ([]*ical.Event, e
 		}
 	}
 
-	return events, nil
+	return localCals, events, nil
 }
 
 // expandRecurring extracts the RRULE from the raw iCal data and expands it.
@@ -184,10 +188,6 @@ func (s *Sync) LoadFromCache() {
 	var allEvents []*ical.Event
 
 	for _, idx := range indexes {
-		if len(idx.Entries) == 0 {
-			continue
-		}
-
 		readOnly := false
 		if idx.ConfigIndex < len(s.cfg.Calendars) {
 			readOnly = s.cfg.Calendars[idx.ConfigIndex].ReadOnly
@@ -195,6 +195,7 @@ func (s *Sync) LoadFromCache() {
 		calID := s.store.RegisterCalendar(ical.CalendarInfo{
 			Name:        idx.CalendarName,
 			Color:       idx.CalendarColor,
+			Source:      idx.SourceName,
 			CalPath:     idx.CalendarURL,
 			ConfigIndex: idx.ConfigIndex,
 			ReadOnly:    readOnly,
