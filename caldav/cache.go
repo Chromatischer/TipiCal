@@ -23,6 +23,7 @@ type CacheIndex struct {
 	LastSync      time.Time    `json:"last_sync"`
 	CalendarName  string       `json:"calendar_name"`
 	CalendarColor string       `json:"calendar_color"`
+	SourceName    string       `json:"source_name"`
 	ConfigIndex   int          `json:"config_index"`
 	Entries       []CacheEntry `json:"entries"`
 }
@@ -90,7 +91,7 @@ func (c *Cache) AllIndexes() map[string]*CacheIndex {
 }
 
 // SetIndexMeta updates the calendar metadata on a cache index.
-func (c *Cache) SetIndexMeta(calURL, name, color string, configIndex int) {
+func (c *Cache) SetIndexMeta(calURL, name, color, source string, configIndex int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -101,6 +102,7 @@ func (c *Cache) SetIndexMeta(calURL, name, color string, configIndex int) {
 	}
 	idx.CalendarName = name
 	idx.CalendarColor = color
+	idx.SourceName = source
 	idx.ConfigIndex = configIndex
 	c.saveIndex()
 }
