@@ -168,6 +168,10 @@ func (a *App) selectedEvent() *ical.Event {
 		if ev := a.threeDayView.SelectedEvent(); ev != nil {
 			return ev
 		}
+	case config.ViewDay:
+		if ev := a.dayView.SelectedEvent(); ev != nil {
+			return ev
+		}
 	}
 
 	// Fallback: first event on the selected day
