@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 - Calendar names from CalDAV discovery are now correctly restored from cache on startup, including when calendars have no events.
 - App no longer falls back to "Work"/"Personal" placeholder calendars when a background sync fails (e.g. offline) — the cached calendar list is preserved.
 - `source_name` (account name) is now persisted in `cache_index.json` so the sidebar source headers survive a restart.
+- Agenda view scrolling no longer jumps when long descriptions or locations wrap across multiple lines.
+- Agenda hyperlinks are shortened and tinted blue for readability, without breaking click targets.
 
 ## 0.1.0-beta.0
 
