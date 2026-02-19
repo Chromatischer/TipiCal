@@ -168,7 +168,12 @@ dayLoop:
 			}
 
 			dot := lipgloss.NewStyle().Foreground(color).Render("●")
-			timeStr := util.FormatTimeRange(e.Start, e.End, av.use24h)
+			var timeStr string
+			if e.AllDay {
+				timeStr = "All day"
+			} else {
+				timeStr = util.FormatTimeRange(e.Start, e.End, av.use24h)
+			}
 			timeRendered := lipgloss.NewStyle().
 				Foreground(av.theme.TextMuted).
 				Width(14).
