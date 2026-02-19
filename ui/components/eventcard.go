@@ -47,7 +47,12 @@ func (ec *EventCard) View() string {
 		Render(util.TruncateText(e.Summary, ec.width-4))
 
 	// Time
-	timeStr := util.FormatTimeRange(e.Start, e.End, ec.use24h)
+	var timeStr string
+	if e.AllDay {
+		timeStr = "All day"
+	} else {
+		timeStr = util.FormatTimeRange(e.Start, e.End, ec.use24h)
+	}
 	timeRendered := lipgloss.NewStyle().
 		Foreground(ec.theme.TextMuted).
 		Render(timeStr)

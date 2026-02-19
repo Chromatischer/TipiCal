@@ -168,6 +168,10 @@ func (a *App) selectedEvent() *ical.Event {
 		if ev := a.threeDayView.SelectedEvent(); ev != nil {
 			return ev
 		}
+	case config.ViewDay:
+		if ev := a.dayView.SelectedEvent(); ev != nil {
+			return ev
+		}
 	}
 
 	// Fallback: first event on the selected day
@@ -389,6 +393,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Event detail
 		case "enter":
+			if a.viewType == config.ViewAgenda || a.viewType == config.ViewMonth {
+				break
+			}
 			if event := a.selectedEvent(); event != nil {
 				calName := a.store.CalendarName(event.CalendarID)
 				a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
@@ -613,7 +620,6 @@ func (a *App) renderHelp() string {
 		{"b", "Toggle sidebar"},
 		{"", ""},
 		{"n", "New event"},
-		{"Enter", "Event details"},
 		{"e", "Edit event"},
 		{"D", "Delete event"},
 		{"/", "Search"},

@@ -40,6 +40,8 @@ func (dv *DayView) RefreshEvents() {
 func (dv *DayView) rebuildGrid() {
 	days := []time.Time{dv.selectedDay}
 	dv.grid = components.NewTimeGrid(dv.theme, days, dv.store, dv.use24h)
+	dv.grid.SetSelected(dv.selectedDay)
+	dv.grid.ResetEventSelection()
 	if dv.width > 0 && dv.height > 0 {
 		dv.grid.SetSize(dv.width, dv.height)
 	}
@@ -77,14 +79,14 @@ func (dv *DayView) PrevPeriod() {
 	dv.rebuildGrid()
 }
 
-// MoveUp scrolls up.
+// MoveUp selects the previous event.
 func (dv *DayView) MoveUp() {
-	dv.grid.ScrollUp()
+	dv.grid.SelectPrevEvent()
 }
 
-// MoveDown scrolls down.
+// MoveDown selects the next event.
 func (dv *DayView) MoveDown() {
-	dv.grid.ScrollDown()
+	dv.grid.SelectNextEvent()
 }
 
 // MoveLeft goes to previous day.
@@ -103,4 +105,12 @@ func (dv *DayView) View() string {
 		return ""
 	}
 	return dv.grid.View()
+}
+
+// SelectedEvent returns the currently selected event, or nil.
+func (dv *DayView) SelectedEvent() *ical.Event {
+	if dv.grid == nil {
+		return nil
+	}
+	return dv.grid.SelectedEvent()
 }

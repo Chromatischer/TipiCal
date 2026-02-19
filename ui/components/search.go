@@ -206,7 +206,12 @@ func (s *Search) View() string {
 			dateStr = event.Start.Format("Jan 2")
 		}
 
-		timeStr := util.FormatTime(event.Start, s.use24h)
+		var timeStr string
+		if event.AllDay {
+			timeStr = "All day"
+		} else {
+			timeStr = util.FormatTime(event.Start, s.use24h)
+		}
 		title := util.TruncateText(event.Summary, searchWidth-25)
 
 		style := lipgloss.NewStyle().Width(searchWidth).Padding(0, 1)

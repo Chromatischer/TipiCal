@@ -18,6 +18,7 @@ type Theme struct {
 	Text      lipgloss.Color
 	TextMuted lipgloss.Color
 	TextFaint lipgloss.Color
+	Link      lipgloss.Color
 
 	// Semantic colors
 	Accent   lipgloss.Color
@@ -81,6 +82,7 @@ func NewTheme(cfg *Config) *Theme {
 			Text:           lipgloss.Color("#CDD6F4"),
 			TextMuted:      lipgloss.Color("#A6ADC8"),
 			TextFaint:      lipgloss.Color("#6C7086"),
+			Link:           lipgloss.Color("#74C7EC"),
 			Accent:         accent,
 			Today:          lipgloss.Color("#F38BA8"),
 			Selected:       lipgloss.Color("#89B4FA"),
@@ -101,6 +103,7 @@ func NewTheme(cfg *Config) *Theme {
 		Text:           lipgloss.Color("#4C4F69"),
 		TextMuted:      lipgloss.Color("#6C6F85"),
 		TextFaint:      lipgloss.Color("#9CA0B0"),
+		Link:           lipgloss.Color("#1E66F5"),
 		Accent:         accent,
 		Today:          lipgloss.Color("#D20F39"),
 		Selected:       lipgloss.Color("#1E66F5"),

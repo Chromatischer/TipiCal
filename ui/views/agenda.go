@@ -12,7 +12,6 @@ import (
 	"github.com/tipical/tipical/util"
 )
 
-// AgendaView renders a chronological list of upcoming events.
 type AgendaView struct {
 	theme       *config.Theme
 	store       *ical.Store
@@ -22,10 +21,17 @@ type AgendaView struct {
 	use24h      bool
 	agendaDays  int
 	scrollY     int
-	cursor      int
 }
 
-// NewAgendaView creates a new agenda view.
+func styleWrap(color lipgloss.Color) (string, string) {
+	rendered := lipgloss.NewStyle().Foreground(color).Render("X")
+	parts := strings.SplitN(rendered, "X", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return parts[0], parts[1]
+}
+
 func NewAgendaView(theme *config.Theme, store *ical.Store, cfg *config.Config) *AgendaView {
 	return &AgendaView{
 		theme:       theme,
@@ -36,56 +42,104 @@ func NewAgendaView(theme *config.Theme, store *ical.Store, cfg *config.Config) *
 	}
 }
 
-// SetSize sets the view dimensions.
 func (av *AgendaView) SetSize(w, h int) {
 	av.width = w
 	av.height = h
 }
 
-// SelectedDate returns the currently selected date.
 func (av *AgendaView) SelectedDate() time.Time {
 	return av.selectedDay
 }
 
-// SetDate navigates to a specific date.
 func (av *AgendaView) SetDate(d time.Time) {
 	av.selectedDay = d
 	av.scrollY = 0
 }
 
-// NextPeriod advances the agenda start by a week.
 func (av *AgendaView) NextPeriod() {
 	av.selectedDay = av.selectedDay.AddDate(0, 0, 7)
+	av.scrollY = 0
 }
 
-// PrevPeriod goes back a week.
 func (av *AgendaView) PrevPeriod() {
 	av.selectedDay = av.selectedDay.AddDate(0, 0, -7)
+	av.scrollY = 0
 }
 
-// MoveUp moves cursor up.
 func (av *AgendaView) MoveUp() {
 	if av.scrollY > 0 {
 		av.scrollY--
 	}
 }
 
-// MoveDown moves cursor down.
 func (av *AgendaView) MoveDown() {
-	av.scrollY++
+	maxScroll := av.maxScroll()
+	if av.scrollY < maxScroll {
+		av.scrollY++
+	}
 }
 
-// MoveLeft is a no-op for agenda.
 func (av *AgendaView) MoveLeft() {
 	av.PrevPeriod()
 }
 
-// MoveRight is a no-op for agenda.
 func (av *AgendaView) MoveRight() {
 	av.NextPeriod()
 }
 
-// View renders the agenda view.
+func (av *AgendaView) maxScroll() int {
+	total := av.countTotalLines()
+	maxScroll := total - av.height
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
+}
+
+func (av *AgendaView) countTotalLines() int {
+	startDate := time.Date(av.selectedDay.Year(), av.selectedDay.Month(), av.selectedDay.Day(),
+		0, 0, 0, 0, time.Local)
+	endDate := startDate.AddDate(0, 0, av.agendaDays)
+
+	indent := 20
+	textWidth := av.width - indent
+	if textWidth < 20 {
+		textWidth = 20
+	}
+	maxURLLen := textWidth
+	if maxURLLen > 40 {
+		maxURLLen = 40
+	}
+	linkPrefix, _ := styleWrap(av.theme.Link)
+	locPrefix, _ := styleWrap(av.theme.TextFaint)
+	descPrefix, _ := styleWrap(av.theme.TextMuted)
+
+	total := 0
+	for d := startDate; d.Before(endDate); d = d.AddDate(0, 0, 1) {
+		events := av.store.EventsForDay(d)
+		if len(events) == 0 {
+			continue
+		}
+
+		total += 2
+		for _, e := range events {
+			total++
+			if e.Location != "" {
+				locFormatted := util.FormatWithHyperlinksStyled(e.Location, maxURLLen, linkPrefix, locPrefix)
+				wrapped := util.WrapTextANSI(locFormatted, textWidth)
+				total += len(wrapped)
+			}
+			if e.Description != "" {
+				descFormatted := util.FormatWithHyperlinksStyled(e.Description, maxURLLen, linkPrefix, descPrefix)
+				wrapped := util.WrapTextANSI(descFormatted, textWidth)
+				total += len(wrapped)
+			}
+		}
+		total++
+	}
+	return total
+}
+
 func (av *AgendaView) View() string {
 	startDate := time.Date(av.selectedDay.Year(), av.selectedDay.Month(), av.selectedDay.Day(),
 		0, 0, 0, 0, time.Local)
@@ -93,7 +147,9 @@ func (av *AgendaView) View() string {
 	now := time.Now()
 
 	var lines []string
-	lineCount := 0
+	linkPrefix, _ := styleWrap(av.theme.Link)
+	locPrefix, locSuffix := styleWrap(av.theme.TextFaint)
+	descPrefix, descSuffix := styleWrap(av.theme.TextMuted)
 
 	for d := startDate; d.Before(endDate); d = d.AddDate(0, 0, 1) {
 		events := av.store.EventsForDay(d)
@@ -105,7 +161,6 @@ func (av *AgendaView) View() string {
 			return events[i].Start.Before(events[j].Start)
 		})
 
-		// Day header
 		var dayLabel string
 		if util.SameDay(d, now) {
 			dayLabel = "Today"
@@ -127,29 +182,25 @@ func (av *AgendaView) View() string {
 		dateHeader := headerStyle.Render(fmt.Sprintf("  %s — %s",
 			dayLabel, d.Format("January 2")))
 
-		if lineCount >= av.scrollY {
-			lines = append(lines, dateHeader)
-			divider := lipgloss.NewStyle().
-				Foreground(av.theme.Border).
-				Render("  " + strings.Repeat("─", av.width-6))
-			lines = append(lines, divider)
-		}
-		lineCount += 2
+		lines = append(lines, dateHeader)
+		divider := lipgloss.NewStyle().
+			Foreground(av.theme.Border).
+			Render("  " + strings.Repeat("─", av.width-6))
+		lines = append(lines, divider)
 
-		// Events
 		for _, e := range events {
-			if lineCount < av.scrollY {
-				lineCount++
-				continue
-			}
-
 			color := lipgloss.Color(e.Color)
 			if e.Color == "" {
 				color = av.theme.CalendarColor(e.CalendarID)
 			}
 
 			dot := lipgloss.NewStyle().Foreground(color).Render("●")
-			timeStr := util.FormatTimeRange(e.Start, e.End, av.use24h)
+			var timeStr string
+			if e.AllDay {
+				timeStr = "All day"
+			} else {
+				timeStr = util.FormatTimeRange(e.Start, e.End, av.use24h)
+			}
 			timeRendered := lipgloss.NewStyle().
 				Foreground(av.theme.TextMuted).
 				Width(14).
@@ -161,29 +212,40 @@ func (av *AgendaView) View() string {
 
 			eventLine := fmt.Sprintf("  %s %s  %s", dot, timeRendered, title)
 
-			if e.Location != "" {
-				loc := lipgloss.NewStyle().
-					Foreground(av.theme.TextFaint).
-					Render(fmt.Sprintf("  %s", e.Location))
-				eventLine += loc
-			}
-
 			lines = append(lines, eventLine)
-			lineCount++
 
-			if len(lines) >= av.height-2 {
-				break
+			indent := 20
+			textWidth := av.width - indent
+			if textWidth < 20 {
+				textWidth = 20
+			}
+			maxURLLen := textWidth
+			if maxURLLen > 40 {
+				maxURLLen = 40
+			}
+
+			if e.Location != "" {
+				locFormatted := util.FormatWithHyperlinksStyled(e.Location, maxURLLen, linkPrefix, locPrefix)
+				wrapped := util.WrapTextANSI(locFormatted, textWidth)
+
+				for _, line := range wrapped {
+					indentedLine := strings.Repeat(" ", indent) + locPrefix + line + locSuffix
+					lines = append(lines, indentedLine)
+				}
+			}
+
+			if e.Description != "" {
+				descFormatted := util.FormatWithHyperlinksStyled(e.Description, maxURLLen, linkPrefix, descPrefix)
+				wrapped := util.WrapTextANSI(descFormatted, textWidth)
+
+				for _, line := range wrapped {
+					indentedLine := strings.Repeat(" ", indent) + descPrefix + line + descSuffix
+					lines = append(lines, indentedLine)
+				}
 			}
 		}
 
-		if lineCount >= av.scrollY {
-			lines = append(lines, "") // spacing between days
-		}
-		lineCount++
-
-		if len(lines) >= av.height-2 {
-			break
-		}
+		lines = append(lines, "")
 	}
 
 	if len(lines) == 0 {
@@ -193,5 +255,19 @@ func (av *AgendaView) View() string {
 		return emptyMsg
 	}
 
-	return strings.Join(lines, "\n")
+	start := av.scrollY
+	if start > len(lines) {
+		start = len(lines)
+	}
+	end := start + av.height
+	if end > len(lines) {
+		end = len(lines)
+	}
+	visible := lines[start:end]
+
+	return lipgloss.NewStyle().
+		Width(av.width).
+		Height(av.height).
+		MaxHeight(av.height).
+		Render(strings.Join(visible, "\n"))
 }
