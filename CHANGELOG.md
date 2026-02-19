@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **Overlap rendering is now fully correct across all real-world event configurations.** Two fixes landed together:
+  - Events with the same start time are now rendered consistently on every row: the longer event occupies the full-width content area and the shorter event collapses into the sidebar marker (▌) for the entire duration of the overlap — not just on the first row.
+  - Selection outlines on overlapping same-start-time events now track the correct event across all continuation rows. Previously the outline would jump between the primary and secondary event on every sub-row after the first, making keyboard selection unreliable.
+
 ### Fixed
 
 - `+1` badge now shows correctly for same-calendar events with the same start time, including when one event ends before the other. Badge shifts inward when the event is selected to avoid crowding the selection marker.

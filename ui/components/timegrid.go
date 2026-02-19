@@ -449,18 +449,25 @@ func (tg *TimeGrid) renderHourCell(hour int, day time.Time, events []*ical.Event
 		}
 
 		// Determine which event gets the content area vs the sidebar marker.
-		// When the primary starts at this hour, it gets the content area so its
-		// title is visible; otherwise the secondary (indented) event gets it.
+		// Default: secondary (indented, later-starting) takes the content area so its
+		// title is visible during its overlap window; primary shows as a sidebar bar.
+		// Exception 1: primary starts here but secondary doesn't — show primary title.
+		// Exception 2: both start at the same time — primary (longer) always gets content.
 		contentEvent := secondary
 		sidebarEvent := primary
 		isContentStart := isSecStart
 		if isPriStart && !isSecStart {
 			contentEvent = primary
 			sidebarEvent = secondary
+			isContentStart = isPriStart
 		} else if isPriStart && isSecStart && primary != nil && !primary.Start.After(secondary.Start) {
 			contentEvent = primary
 			sidebarEvent = secondary
 			isContentStart = isPriStart
+		} else if !isPriStart && !isSecStart && primary != nil && primary.Start.Equal(secondary.Start) {
+			// Continuation rows of a same-start-time pair: keep primary in content for consistency.
+			contentEvent = primary
+			sidebarEvent = secondary
 		}
 
 		contentColor := tg.eventColor(contentEvent)
@@ -639,6 +646,10 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 		}
 
 		// Determine which event gets the content area vs the sidebar marker.
+		// Default: secondary (indented, later-starting) takes the content area so its
+		// title is visible during its overlap window; primary shows as a sidebar bar.
+		// Exception 1: primary starts here but secondary doesn't — show primary title.
+		// Exception 2: both start at the same time — primary (longer) always gets content.
 		contentEvent := secondary
 		sidebarEvent := primary
 		isContentStart := isSecStart
@@ -650,6 +661,10 @@ func (tg *TimeGrid) renderContinuationCell(hour int, day time.Time, events []*ic
 			contentEvent = primary
 			sidebarEvent = secondary
 			isContentStart = isPriStart
+		} else if !isPriStart && !isSecStart && primary != nil && primary.Start.Equal(secondary.Start) {
+			// Continuation rows of a same-start-time pair: keep primary in content for consistency.
+			contentEvent = primary
+			sidebarEvent = secondary
 		}
 
 		contentColor := tg.eventColor(contentEvent)
@@ -1123,9 +1138,16 @@ func (tg *TimeGrid) findOverlapInfo(day time.Time, events []*ical.Event) map[str
 			if !a.Start.Before(b.End) || !b.Start.Before(a.End) {
 				continue
 			}
-			// Determine which event is secondary (indented) based on actual start time
+			// Determine which event is secondary (indented) based on actual start time.
+			// When start times are equal, the shorter event goes to the sidebar.
 			var secondary *ical.Event
-			if !a.Start.After(b.Start) {
+			if a.Start.Equal(b.Start) {
+				if a.End.Before(b.End) {
+					secondary = a
+				} else {
+					secondary = b
+				}
+			} else if !a.Start.After(b.Start) {
 				secondary = b
 			} else {
 				secondary = a

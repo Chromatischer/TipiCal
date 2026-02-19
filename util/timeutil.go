@@ -64,6 +64,12 @@ func DaysInMonth(year int, month time.Month) int {
 	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local).Day()
 }
 
+// DisplayWidth returns the terminal display width of s in columns, correctly
+// handling multi-byte characters and wide glyphs such as emojis (2 columns wide).
+func DisplayWidth(s string) int {
+	return runewidth.StringWidth(s)
+}
+
 // TruncateText truncates text to maxLen display columns, adding ellipsis if needed.
 func TruncateText(s string, maxLen int) string {
 	if maxLen <= 0 {
