@@ -273,6 +273,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.header.UpdateWave()
 		return a, a.header.WaveTick()
 
+	case tea.MouseMsg:
+		if !a.search.IsActive() && !a.eventEditor.IsActive() && !a.showHelp {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				a.activeView().MoveUp()
+				a.syncDateToHeader()
+			case tea.MouseButtonWheelDown:
+				a.activeView().MoveDown()
+				a.syncDateToHeader()
+			}
+		}
+		return a, nil
+
 	case tea.KeyMsg:
 		// If search is active, route keys to it
 		if a.search.IsActive() {
