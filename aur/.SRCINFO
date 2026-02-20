@@ -1,0 +1,17 @@
+pkgbase = tipical-git
+	pkgdesc = A fast, beautiful calendar interface for your terminal
+	pkgver = r35.6cdcba8
+	pkgrel = 1
+	url = https://github.com/Chromatischer/TipiCal
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = git
+	makedepends = go
+	depends = glibc
+	provides = tipical
+	conflicts = tipical
+	source = git+https://github.com/Chromatischer/TipiCal.git
+	md5sums = SKIP
+
+pkgname = tipical-git
