@@ -2,8 +2,6 @@
 
 A fast, beautiful calendar interface for your terminal.
 
-EARLY BETA: Core features like editing, creating, and deleting are entirely untested and may not work at all.
-
 ![TipiCal UI](docs/images/main.png)
 
 ## Features

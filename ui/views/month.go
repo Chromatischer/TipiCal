@@ -120,7 +120,7 @@ func (mv *MonthView) View() string {
 		colWidth = 10
 	}
 
-	cellHeight := (mv.height-4)/6 - 2 // 6 rows, minus header; subtract 2 for borders
+	cellHeight := (mv.height-2)/6 - 2 // 6 rows, 2-line header; subtract 2 for borders
 	if cellHeight < 3 {
 		cellHeight = 3
 	}
