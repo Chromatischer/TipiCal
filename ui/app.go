@@ -53,11 +53,12 @@ type App struct {
 	syncMgr *caldav.Sync
 
 	// Components
-	header      *Header
-	sidebar     *Sidebar
-	statusbar   *StatusBar
-	eventEditor *editor.EventEditor
-	search      *components.Search
+	header            *Header
+	sidebar           *Sidebar
+	statusbar         *StatusBar
+	eventEditor       *editor.EventEditor
+	search            *components.Search
+	widthWarningModal *components.Modal
 
 	// Views
 	viewType     config.ViewType
@@ -72,8 +73,10 @@ type App struct {
 	height int
 
 	// State
-	showSidebar bool
-	showHelp    bool
+	showSidebar      bool
+	userWantsSidebar bool
+	showHelp         bool
+	showWidthWarning bool
 }
 
 // currentDate returns today's date — used by sidebar.go and others in this package.
@@ -87,19 +90,27 @@ func NewApp(cfg *config.Config, store *ical.Store, syncMgr *caldav.Sync) *App {
 	styles := NewStyles(theme)
 
 	app := &App{
-		cfg:         cfg,
-		theme:       theme,
-		styles:      styles,
-		store:       store,
-		syncMgr:     syncMgr,
-		header:      NewHeader(styles, cfg.General.DefaultView, time.Now()),
-		sidebar:     NewSidebar(styles, cfg, store),
-		statusbar:   NewStatusBar(styles),
-		eventEditor: editor.NewEventEditor(theme, store),
-		search:      components.NewSearch(theme, store, cfg.Use24h()),
-		viewType:    cfg.General.DefaultView,
-		showSidebar: true,
+		cfg:              cfg,
+		theme:            theme,
+		styles:           styles,
+		store:            store,
+		syncMgr:          syncMgr,
+		header:           NewHeader(styles, cfg.General.DefaultView, time.Now()),
+		sidebar:          NewSidebar(styles, cfg, store),
+		statusbar:        NewStatusBar(styles),
+		eventEditor:      editor.NewEventEditor(theme, store),
+		search:           components.NewSearch(theme, store, cfg.Use24h()),
+		viewType:         cfg.General.DefaultView,
+		showSidebar:      true,
+		userWantsSidebar: true,
 	}
+
+	app.widthWarningModal = components.NewModal(
+		theme,
+		"Cannot Show Sidebar",
+		"Width insufficient for current resolution",
+		[]components.ModalAction{{Label: "OK"}},
+	)
 
 	// Initialize all views
 	app.monthView = views.NewMonthView(theme, store, cfg)
@@ -326,6 +337,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// If width warning modal is showing, any key closes it
+		if a.showWidthWarning {
+			a.showWidthWarning = false
+			return a, nil
+		}
+
 		// Global keys
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -372,8 +389,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Toggle sidebar
 		case "b":
-			a.showSidebar = !a.showSidebar
-			a.updateLayout()
+			const minContentWidth = 84
+			minWidthWithSidebar := 25 + minContentWidth
+			if !a.userWantsSidebar && a.width < minWidthWithSidebar {
+				a.showWidthWarning = true
+			} else {
+				a.userWantsSidebar = !a.userWantsSidebar
+				a.updateLayout()
+			}
 
 		// Event management
 		case "n":
@@ -533,11 +556,20 @@ func (a *App) syncDateToHeader() {
 }
 
 func (a *App) updateLayout() {
+	const minContentWidth = 84
 	sidebarWidth := 0
-	sidebarRenderedWidth := 0 // includes border
+	sidebarRenderedWidth := 0
+
+	minWidthWithSidebar := 25 + minContentWidth
+	if a.width < minWidthWithSidebar {
+		a.showSidebar = false
+	} else {
+		a.showSidebar = a.userWantsSidebar
+	}
+
 	if a.showSidebar {
 		sidebarWidth = 24
-		sidebarRenderedWidth = 25 // 24 content + 1 right border
+		sidebarRenderedWidth = 25
 	}
 
 	contentWidth := a.width - sidebarRenderedWidth
@@ -567,6 +599,9 @@ func (a *App) View() string {
 	// Header
 	header := a.header.View()
 
+	// Content area height
+	contentHeight := a.height - 4
+
 	// Content area
 	var content string
 	viewContent := a.activeView().View()
@@ -575,7 +610,10 @@ func (a *App) View() string {
 		sidebarContent := a.sidebar.View()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebarContent, viewContent)
 	} else {
-		content = viewContent
+		content = lipgloss.NewStyle().
+			Width(a.width).
+			Height(contentHeight).
+			Render(viewContent)
 	}
 
 	// Event editor overlay
@@ -591,6 +629,17 @@ func (a *App) View() string {
 	// Help overlay
 	if a.showHelp {
 		content = a.renderHelp()
+	}
+
+	// Width warning overlay
+	if a.showWidthWarning {
+		content = lipgloss.Place(
+			a.width,
+			contentHeight,
+			lipgloss.Center,
+			lipgloss.Center,
+			a.widthWarningModal.View(),
+		)
 	}
 
 	// Status bar
