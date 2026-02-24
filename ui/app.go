@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -108,7 +109,7 @@ func NewApp(cfg *config.Config, store *ical.Store, syncMgr *caldav.Sync) *App {
 	app.widthWarningModal = components.NewModal(
 		theme,
 		"Cannot Show Sidebar",
-		"Width insufficient for current resolution",
+		"Width insufficient to display sidebar",
 		[]components.ModalAction{{Label: "OK"}},
 	)
 
@@ -298,6 +299,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		const minWidth = 80
+		const minHeight = 35
+		if a.width < minWidth || a.height < minHeight {
+			if msg.String() == "q" || msg.String() == "ctrl+c" {
+				return a, tea.Quit
+			}
+			return a, nil // swallow everything else
+		}
 		// If search is active, route keys to it
 		if a.search.IsActive() {
 			closed := a.search.HandleKey(msg.String())
@@ -594,6 +603,14 @@ func (a *App) updateLayout() {
 func (a *App) View() string {
 	if a.width == 0 || a.height == 0 {
 		return "Loading..."
+	}
+
+	const minWidth = 80
+	const minHeight = 35
+	if a.width < minWidth || a.height < minHeight {
+		msg := fmt.Sprintf("Terminal too small (%dx%d)\n Minimum: %dx%d",
+			a.width, a.height, minWidth, minHeight)
+		return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, msg)
 	}
 
 	// Header

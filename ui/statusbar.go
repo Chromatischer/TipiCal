@@ -50,14 +50,15 @@ func (sb *StatusBar) View() string {
 		key  string
 		desc string
 	}{
-		{"h/l", "nav"},
-		{"j/k", "move"},
-		{"t", "today"},
-		{"n", "new"},
-		{"e", "edit"},
-		{"D", "delete"},
-		{"/", "search"},
-		{"?", "help"},
+		{" ", "nav (h/l)"},
+		{" ", "move (j/k)"},
+		{"󰃶 ", "today (t)"},
+		{" ", "new (n)"},
+		{" ", "edit (e)"},
+		{" ", "delete (D)"},
+		{" ", "search (/)"},
+		{"󰋖", "help (?)"},
+		{" ", "sidebar(b)"},
 		{"q", "quit"},
 	}
 
@@ -74,7 +75,7 @@ func (sb *StatusBar) View() string {
 			descStyle.Render(h.desc),
 		))
 	}
-	hintsStr := strings.Join(hintParts, "  ")
+	hintLines := packParts(hintParts, sb.width-2, "  ")
 
 	// Right side: sync status or message
 	var rightStr string
@@ -99,19 +100,56 @@ func (sb *StatusBar) View() string {
 		}
 	}
 
-	hintsWidth := lipgloss.Width(hintsStr)
 	rightWidth := lipgloss.Width(rightStr)
-	gap := sb.width - hintsWidth - rightWidth - 2
-	if gap < 0 {
-		gap = 0
+
+	last := hintLines[len(hintLines)-1]
+	if lipgloss.Width(last)+1+rightWidth > sb.width-2 {
+		hintLines = append(hintLines, "")
 	}
 
-	bar := lipgloss.JoinHorizontal(
-		lipgloss.Center,
-		hintsStr,
-		strings.Repeat(" ", gap),
-		rightStr,
-	)
+	var barLines []string
+	for i, line := range hintLines {
+		if i == len(hintLines)-1 {
+			lineWidth := lipgloss.Width(line)
+			gap := sb.width - lineWidth - rightWidth - 2
+			if gap < 1 {
+				gap = 1
+			}
+			barLines = append(barLines, line+strings.Repeat(" ", gap)+rightStr)
+		} else {
+			barLines = append(barLines, line)
+		}
+	}
+
+	bar := strings.Join(barLines, "\n")
 
 	return sb.styles.StatusBar.Width(sb.width).Render(bar)
+}
+
+// packParts fits parts onto lines of lineWidth columns,
+// separating them with sep. Parts are never split across lines.
+func packParts(parts []string, lineWidth int, sep string) []string {
+	sepWidth := lipgloss.Width(sep)
+	var lines []string
+	currentLine := ""
+	currentWidth := 0
+
+	for _, part := range parts {
+		partWidth := lipgloss.Width(part)
+		if currentWidth == 0 {
+			currentLine = part
+			currentWidth = partWidth
+		} else if currentWidth+sepWidth+partWidth <= lineWidth {
+			currentLine += sep + part
+			currentWidth += sepWidth + partWidth
+		} else {
+			lines = append(lines, currentLine)
+			currentLine = part
+			currentWidth = partWidth
+		}
+	}
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+	return lines
 }
