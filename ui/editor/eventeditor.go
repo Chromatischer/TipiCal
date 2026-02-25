@@ -50,11 +50,16 @@ type EventEditor struct {
 	result      *EditorResult
 
 	// Detail mode state
-	detailEvent    *ical.Event
-	detailCalName  string
-	detailFocused  int
-	detailUse24h   bool
-	statusMsg      string
+	detailEvent   *ical.Event
+	detailCalName string
+	detailFocused int
+	detailUse24h  bool
+	statusMsg     string
+
+	// Cached layout info from last renderDetail() call.
+	detailRenderedW int
+	detailRenderedH int
+	detailBtnRowY   int // row within rendered detail modal (0 = top border)
 }
 
 // EditorResult holds the result of an editor action.
@@ -205,6 +210,98 @@ func (ee *EventEditor) SetSize(w, h int) {
 	ee.height = h
 	if ee.form != nil {
 		ee.form.SetSize(w/2, h-4)
+	}
+}
+
+// HandleMouse processes a left-click at (x, y) relative to the top-left of the
+// editor's content area (i.e. screen y minus the header height of 2 rows).
+// containerHeight is the actual displayed content area height (a.height - 4).
+func (ee *EventEditor) HandleMouse(x, y, containerHeight int) {
+	if !ee.active {
+		return
+	}
+
+	switch ee.mode {
+	case ModeCreate, ModeEdit:
+		if ee.form != nil {
+			ee.form.HandleMouse(x, y, ee.width, containerHeight)
+			if ee.form.IsSubmitted() {
+				event := ee.buildEventFromForm()
+				if ee.mode == ModeCreate {
+					ee.result = &EditorResult{Action: "create", Event: event}
+				} else {
+					ee.result = &EditorResult{Action: "update", Event: event}
+				}
+				ee.active = false
+			} else if ee.form.IsCancelled() {
+				ee.result = &EditorResult{Action: "cancel"}
+				ee.active = false
+			}
+		}
+
+	case ModeDelete:
+		if ee.deleteModal != nil {
+			action := ee.deleteModal.HandleMouse(x, y, ee.width, containerHeight)
+			switch action {
+			case 0: // Cancel
+				ee.result = &EditorResult{Action: "cancel"}
+				ee.active = false
+			case 1: // Delete
+				existing := ee.store.FindEvent(ee.editingUID)
+				ee.result = &EditorResult{Action: "delete", Event: existing}
+				ee.active = false
+			}
+		}
+
+	case ModeDetail:
+		ee.handleDetailMouse(x, y, containerHeight)
+	}
+}
+
+func (ee *EventEditor) handleDetailMouse(x, y, containerHeight int) {
+	if ee.detailRenderedW == 0 || ee.detailRenderedH == 0 {
+		return
+	}
+
+	// Detail modal is centered in the actual displayed content area.
+	modalLeft := (ee.width - ee.detailRenderedW) / 2
+	modalTop := (containerHeight - ee.detailRenderedH) / 2
+
+	// Convert to modal-local coordinates.
+	mx := x - modalLeft
+	my := y - modalTop
+
+	if mx < 0 || mx >= ee.detailRenderedW || my < 0 || my >= ee.detailRenderedH {
+		return
+	}
+
+	if my != ee.detailBtnRowY {
+		return
+	}
+
+	// Button layout from modal left: border(1) + padding left(2) = 3 offset.
+	// Buttons joined with "  " (2 chars) separator, each with Padding(0, 2):
+	//   Edit (4):      [3, 10]
+	//   Delete (6):   [13, 22]
+	//   Copy (4):     [25, 32]
+	//   Copy JSON (9):[35, 47]
+	//   "  " + Close (Esc)(11+4): [50, ...]
+	const innerLeft = 3
+	type btnRange struct{ x1, x2, idx int }
+	btnLabels := []string{"Edit", "Delete", "Copy", "Copy JSON"}
+	ranges := make([]btnRange, len(btnLabels))
+	pos := innerLeft
+	for i, label := range btnLabels {
+		w := 2 + lipgloss.Width(label) + 2 // Padding(0, 2)
+		ranges[i] = btnRange{x1: pos, x2: pos + w - 1, idx: i}
+		pos += w + 2 // +2 for "  " separator
+	}
+
+	for _, r := range ranges {
+		if mx >= r.x1 && mx <= r.x2 {
+			ee.executeDetailButton(r.idx)
+			return
+		}
 	}
 }
 
@@ -651,6 +748,9 @@ func (ee *EventEditor) renderDetail() string {
 		Width(formWidth).
 		Align(lipgloss.Center)
 
+	// Cache button row position: border(1) + padding top(1) from Padding(1,2) +
+	// number of content lines so far = the row of the next appended line.
+	ee.detailBtnRowY = 2 + len(lines)
 	lines = append(lines, buttonRowStyle.Render(buttonRow))
 
 	// Status message (clipboard feedback)
@@ -674,5 +774,8 @@ func (ee *EventEditor) renderDetail() string {
 		BorderForeground(ee.theme.Accent).
 		Padding(1, 2)
 
-	return modalStyle.Render(content)
+	rendered := modalStyle.Render(content)
+	ee.detailRenderedW = lipgloss.Width(rendered)
+	ee.detailRenderedH = lipgloss.Height(rendered)
+	return rendered
 }

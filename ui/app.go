@@ -287,18 +287,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.header.WaveTick()
 
 	case tea.MouseMsg:
-		if !a.search.IsActive() && !a.eventEditor.IsActive() && !a.showHelp {
-			switch msg.Button {
-			case tea.MouseButtonWheelUp:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if !a.search.IsActive() && !a.eventEditor.IsActive() && !a.showHelp {
 				a.activeView().MoveUp()
 				a.syncDateToHeader()
-			case tea.MouseButtonWheelDown:
+			}
+		case tea.MouseButtonWheelDown:
+			if !a.search.IsActive() && !a.eventEditor.IsActive() && !a.showHelp {
 				a.activeView().MoveDown()
 				a.syncDateToHeader()
-			case tea.MouseButtonLeft:
-				if msg.Action == tea.MouseActionPress {
-					return a, a.handleMouseClick(msg.X, msg.Y)
-				}
+			}
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionPress {
+				return a, a.handleMouseClick(msg.X, msg.Y)
 			}
 		}
 		return a, nil
@@ -548,6 +550,35 @@ func (a *App) handleEditorResult(result *editor.EditorResult) tea.Cmd {
 
 // handleMouseClick dispatches a left-click at terminal position (x, y).
 func (a *App) handleMouseClick(x, y int) tea.Cmd {
+	// Content area starts at row 2 (rows 0-1 are the header).
+	// Actual content area height: header(2) + statusbar(2) = 4 rows overhead.
+	contentY := y - 2
+	contentHeight := a.height - 4
+
+	// Event editor overlay — route clicks into it.
+	if a.eventEditor.IsActive() {
+		a.eventEditor.HandleMouse(x, contentY, contentHeight)
+		if sm := a.eventEditor.StatusMessage(); sm != "" {
+			a.statusbar.SetMessage(sm)
+			a.eventEditor.ClearStatusMessage()
+		}
+		if result := a.eventEditor.Result(); result != nil {
+			cmd := a.handleEditorResult(result)
+			a.eventEditor.ClearResult()
+			return cmd
+		}
+		return nil
+	}
+
+	// Width warning modal overlay.
+	if a.showWidthWarning {
+		action := a.widthWarningModal.HandleMouse(x, contentY, a.width, contentHeight)
+		if action >= 0 {
+			a.showWidthWarning = false
+		}
+		return nil
+	}
+
 	// Header row (row 0)
 	if y == 0 {
 		action := a.header.HitTest(x)
@@ -628,7 +659,6 @@ func (a *App) handleMouseClick(x, y int) tea.Cmd {
 	if y < 2 || y > a.height-3 {
 		return nil
 	}
-	contentY := y - 2 // 0-indexed from top of content area
 
 	// Sidebar click
 	if a.showSidebar && x < 25 {

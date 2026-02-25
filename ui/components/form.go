@@ -27,6 +27,11 @@ type FormField struct {
 	Selected    int      // for select fields
 }
 
+// fieldBound holds the inclusive row range of a field within the rendered form.
+type fieldBound struct {
+	top, bottom int // form-local rows, 0 = top border row
+}
+
 // Form is a reusable inline form component.
 type Form struct {
 	theme     *config.Theme
@@ -38,6 +43,12 @@ type Form struct {
 	height    int
 	submitted bool
 	cancelled bool
+
+	// Cached layout info from last View() call.
+	renderedWidth  int
+	renderedHeight int
+	fieldBounds    []fieldBound
+	buttonRowY     int
 }
 
 // NewForm creates a new form.
@@ -320,14 +331,20 @@ func (f *Form) View() string {
 	underlineStyle := lipgloss.NewStyle().Foreground(f.theme.Accent)
 	underlineLine := strings.Repeat(" ", labelWidth) + underlineStyle.Render(strings.Repeat("─", inputWidth))
 
+	f.fieldBounds = make([]fieldBound, len(f.fields))
 	for i, field := range f.fields {
 		isFocused := i == f.focused
+
+		// Record the top row of this field. Content lines start at form row 1
+		// (row 0 is the border top), so the next line is at index len(lines)+1.
+		topRow := len(lines) + 1
 
 		switch field.Type {
 		case FieldSelect:
 			label := labelStyle.Render(field.Label + ":")
 			input := f.renderSelect(field, inputWidth, isFocused)
 			lines = append(lines, label+input)
+			f.fieldBounds[i] = fieldBound{top: topRow, bottom: topRow}
 			if isFocused {
 				lines = append(lines, underlineLine)
 			}
@@ -335,6 +352,7 @@ func (f *Form) View() string {
 		case FieldTextArea:
 			rendered := f.renderTextArea(field, inputWidth, isFocused, labelStyle)
 			lines = append(lines, rendered...)
+			f.fieldBounds[i] = fieldBound{top: topRow, bottom: topRow + len(rendered) - 1}
 			if isFocused {
 				lines = append(lines, underlineLine)
 			}
@@ -343,6 +361,7 @@ func (f *Form) View() string {
 			label := labelStyle.Render(field.Label + ":")
 			input := f.renderTextInput(field, inputWidth, isFocused)
 			lines = append(lines, label+input)
+			f.fieldBounds[i] = fieldBound{top: topRow, bottom: topRow}
 			if isFocused {
 				lines = append(lines, underlineLine)
 			}
@@ -352,6 +371,9 @@ func (f *Form) View() string {
 
 	// Buttons
 	lines = append(lines, "")
+	// Record button row: the next line added will be at this form-local row.
+	f.buttonRowY = len(lines) + 1
+
 	saveStyle := lipgloss.NewStyle().
 		Padding(0, 2).
 		Bold(true)
@@ -389,7 +411,56 @@ func (f *Form) View() string {
 		BorderForeground(f.theme.Accent).
 		Padding(0, 1)
 
-	return modalStyle.Render(content)
+	rendered := modalStyle.Render(content)
+	f.renderedWidth = lipgloss.Width(rendered)
+	f.renderedHeight = lipgloss.Height(rendered)
+	return rendered
+}
+
+// HandleMouse processes a left-click at (x, y) relative to the container's top-left.
+// containerWidth and containerHeight are the dimensions of the centered overlay space.
+func (f *Form) HandleMouse(x, y, containerWidth, containerHeight int) {
+	if f.renderedWidth == 0 || f.renderedHeight == 0 {
+		return
+	}
+
+	// Form is centered in container by lipgloss.Place.
+	formLeft := (containerWidth - f.renderedWidth) / 2
+	formTop := (containerHeight - f.renderedHeight) / 2
+
+	// Check bounds.
+	if x < formLeft || x >= formLeft+f.renderedWidth || y < formTop || y >= formTop+f.renderedHeight {
+		return
+	}
+
+	// Convert to form-local coordinates (0 = left/top border row/col).
+	localX := x - formLeft
+	localY := y - formTop
+
+	// Check button row.
+	// Button layout from form left: border(1) + padding(1) = 2 offset, then
+	// JoinHorizontal("  ", Save(8), "  ", Cancel(16)):
+	// "  " at [2,3], Save at [4,11], "  " at [12,13], Cancel at [14,29].
+	if localY == f.buttonRowY {
+		if localX >= 4 && localX <= 11 {
+			f.submitted = true
+		} else if localX >= 14 && localX <= 29 {
+			f.cancelled = true
+		} else {
+			// Generic click on button area — focus button row.
+			f.focused = len(f.fields)
+		}
+		return
+	}
+
+	// Check field rows.
+	for i, bounds := range f.fieldBounds {
+		if localY >= bounds.top && localY <= bounds.bottom {
+			f.focused = i
+			f.cursor = len([]rune(f.fields[i].Value))
+			return
+		}
+	}
 }
 
 func (f *Form) renderTextInput(field FormField, width int, focused bool) string {
