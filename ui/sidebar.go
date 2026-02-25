@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/tipical/tipical/config"
@@ -43,6 +44,20 @@ func (sb *Sidebar) UpdateDate(d interface {
 	Month() interface{ String() string }
 }) {
 	// This is simplified; actual implementation takes time.Time
+}
+
+// HitTestDate returns the date clicked in the sidebar mini calendar.
+// tx is the terminal column, contentY is 0-indexed from the top of the content area
+// (i.e., terminal row minus 2 for the header). Returns the date and true if a day was clicked.
+func (sb *Sidebar) HitTestDate(tx, contentY int) (time.Time, bool) {
+	// Sidebar has Padding(1, 1): 1 col left padding, 1 row top padding.
+	// Content (mini calendar) starts at tx=1, contentY=1.
+	relX := tx - 1
+	relY := contentY - 1
+	if relX < 0 || relY < 0 {
+		return time.Time{}, false
+	}
+	return sb.miniCal.HitTestDate(relX, relY)
 }
 
 // View renders the sidebar.

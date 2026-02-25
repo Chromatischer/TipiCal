@@ -13,6 +13,12 @@ import (
 // waveTickMsg triggers the wave animation update.
 type waveTickMsg struct{}
 
+// headerHitZone is a clickable region within the header bar.
+type headerHitZone struct {
+	x1, x2 int
+	action  string
+}
+
 // Header renders the top bar with current date range and view switcher.
 type Header struct {
 	styles       *Styles
@@ -20,6 +26,7 @@ type Header struct {
 	viewType     config.ViewType
 	date         time.Time
 	wavePosition int // Current position of the wave effect
+	hitZones     []headerHitZone
 }
 
 // NewHeader creates a new header component.
@@ -83,17 +90,36 @@ func (h *Header) View() string {
 		Render(navTitle)
 
 	// View tabs
-	tabs := h.renderTabs()
+	tabs, tabWidths := h.renderTabs()
 
 	// Logo with wave effect
 	logo := h.renderLogoWithWave()
 
 	// Layout: logo | title ... tabs
-	titleWidth := lipgloss.Width(logo) + lipgloss.Width(title)
+	logoWidth := lipgloss.Width(logo)
+	titleWidth := logoWidth + lipgloss.Width(title)
 	tabsWidth := lipgloss.Width(tabs)
 	gap := h.width - titleWidth - tabsWidth - 2
 	if gap < 0 {
 		gap = 0
+	}
+
+	// Populate hit zones (header has Padding(0,1) so content starts at screen col 1)
+	const leftPad = 1
+	navTitleStartX := leftPad + logoWidth
+	// navTitle = "  ◀  dateStr  ▶": ◀ at offset 2, ▶ at last char
+	arrowLeftX := navTitleStartX + 2
+	arrowRightX := navTitleStartX + lipgloss.Width(title) - 1
+	tabsStartX := h.width - leftPad - tabsWidth
+	viewActions := []string{"view:month", "view:week", "view:threeday", "view:day", "view:agenda"}
+	h.hitZones = []headerHitZone{
+		{x1: arrowLeftX - 1, x2: arrowLeftX + 1, action: "prev"},
+		{x1: arrowRightX - 1, x2: arrowRightX + 1, action: "next"},
+	}
+	tx := tabsStartX
+	for i, w := range tabWidths {
+		h.hitZones = append(h.hitZones, headerHitZone{x1: tx, x2: tx + w - 1, action: viewActions[i]})
+		tx += w
 	}
 
 	bar := lipgloss.JoinHorizontal(
@@ -105,6 +131,16 @@ func (h *Header) View() string {
 	)
 
 	return h.styles.Header.Width(h.width).Render(bar)
+}
+
+// HitTest returns the action string for a click at terminal column x in the header row.
+func (h *Header) HitTest(x int) string {
+	for _, zone := range h.hitZones {
+		if x >= zone.x1 && x <= zone.x2 {
+			return zone.action
+		}
+	}
+	return ""
 }
 
 // renderLogoWithWave renders the TipiCal logo with a wave animation effect.
@@ -135,7 +171,7 @@ func (h *Header) renderLogoWithWave() string {
 	return result.String()
 }
 
-func (h *Header) renderTabs() string {
+func (h *Header) renderTabs() (string, []int) {
 	type tab struct {
 		key   string
 		label string
@@ -151,14 +187,18 @@ func (h *Header) renderTabs() string {
 	}
 
 	var parts []string
+	var widths []int
 	for _, t := range tabs {
 		label := fmt.Sprintf("[%s]", t.key)
+		var rendered string
 		if h.viewType == t.vt {
-			parts = append(parts, h.styles.ViewTabActive.Render(label))
+			rendered = h.styles.ViewTabActive.Render(label)
 		} else {
-			parts = append(parts, h.styles.ViewTab.Render(label))
+			rendered = h.styles.ViewTab.Render(label)
 		}
+		parts = append(parts, rendered)
+		widths = append(widths, lipgloss.Width(rendered))
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Center, parts...)
+	return lipgloss.JoinHorizontal(lipgloss.Center, parts...), widths
 }

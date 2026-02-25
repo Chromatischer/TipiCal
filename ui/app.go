@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -294,6 +295,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.MouseButtonWheelDown:
 				a.activeView().MoveDown()
 				a.syncDateToHeader()
+			case tea.MouseButtonLeft:
+				if msg.Action == tea.MouseActionPress {
+					return a, a.handleMouseClick(msg.X, msg.Y)
+				}
 			}
 		}
 		return a, nil
@@ -537,6 +542,150 @@ func (a *App) handleEditorResult(result *editor.EditorResult) tea.Cmd {
 		}
 	case "cancel":
 		a.statusbar.SetMessage("")
+	}
+	return nil
+}
+
+// handleMouseClick dispatches a left-click at terminal position (x, y).
+func (a *App) handleMouseClick(x, y int) tea.Cmd {
+	// Header row (row 0)
+	if y == 0 {
+		action := a.header.HitTest(x)
+		switch {
+		case action == "prev":
+			a.activeView().PrevPeriod()
+			a.syncDateToHeader()
+		case action == "next":
+			a.activeView().NextPeriod()
+			a.syncDateToHeader()
+		case strings.HasPrefix(action, "view:"):
+			viewStr := strings.TrimPrefix(action, "view:")
+			switch viewStr {
+			case "month":
+				a.switchView(config.ViewMonth)
+			case "week":
+				a.switchView(config.ViewWeek)
+			case "threeday":
+				a.switchView(config.ViewThreeDay)
+			case "day":
+				a.switchView(config.ViewDay)
+			case "agenda":
+				a.switchView(config.ViewAgenda)
+			}
+		}
+		return nil
+	}
+
+	// Status bar content row (last row)
+	if y == a.height-1 {
+		action := a.statusbar.HitTest(x, y, a.height)
+		switch action {
+		case "today":
+			a.activeView().SetDate(time.Now())
+			a.syncDateToHeader()
+		case "new":
+			a.eventEditor.OpenCreate(a.activeView().SelectedDate(), a.calendarNames())
+			a.eventEditor.SetSize(a.width, a.height-3)
+		case "edit":
+			if event := a.selectedEvent(); event != nil {
+				if a.isReadOnly(event) {
+					a.statusbar.SetMessage("Calendar is read-only")
+				} else {
+					a.eventEditor.OpenEdit(event, a.calendarNames())
+					a.eventEditor.SetSize(a.width, a.height-3)
+				}
+			}
+		case "delete":
+			if event := a.selectedEvent(); event != nil {
+				if a.isReadOnly(event) {
+					a.statusbar.SetMessage("Calendar is read-only")
+				} else {
+					a.eventEditor.OpenDelete(event)
+					a.eventEditor.SetSize(a.width, a.height-3)
+				}
+			}
+		case "search":
+			a.search.SetSize(a.width, a.height-3)
+			a.search.Open()
+		case "help":
+			a.showHelp = !a.showHelp
+		case "sidebar":
+			const minContentWidth = 84
+			minWidthWithSidebar := 25 + minContentWidth
+			if !a.userWantsSidebar && a.width < minWidthWithSidebar {
+				a.showWidthWarning = true
+			} else {
+				a.userWantsSidebar = !a.userWantsSidebar
+				a.updateLayout()
+			}
+		case "quit":
+			return tea.Quit
+		}
+		return nil
+	}
+
+	// Content area (rows 2 to height-3)
+	if y < 2 || y > a.height-3 {
+		return nil
+	}
+	contentY := y - 2 // 0-indexed from top of content area
+
+	// Sidebar click
+	if a.showSidebar && x < 25 {
+		if date, ok := a.sidebar.HitTestDate(x, contentY); ok {
+			a.activeView().SetDate(date)
+			a.syncDateToHeader()
+		}
+		return nil
+	}
+
+	contentX := x
+	if a.showSidebar {
+		contentX = x - 25
+	}
+
+	switch a.viewType {
+	case config.ViewMonth:
+		if date, ok := a.monthView.HitTestDay(contentX, contentY); ok {
+			a.switchView(config.ViewDay)
+			a.activeView().SetDate(date)
+			a.syncDateToHeader()
+		}
+	case config.ViewWeek:
+		event, day, hitType := a.weekView.HitTestAt(contentX, contentY)
+		return a.handleTimeGridClick(event, day, hitType,
+			a.weekView.SetSelectedDay, a.weekView.SelectEventByUID)
+	case config.ViewThreeDay:
+		event, day, hitType := a.threeDayView.HitTestAt(contentX, contentY)
+		return a.handleTimeGridClick(event, day, hitType,
+			a.threeDayView.SetSelectedDay, a.threeDayView.SelectEventByUID)
+	case config.ViewDay:
+		event, day, hitType := a.dayView.HitTestAt(contentX, contentY)
+		return a.handleTimeGridClick(event, day, hitType,
+			a.dayView.SetSelectedDay, a.dayView.SelectEventByUID)
+	}
+	return nil
+}
+
+// handleTimeGridClick processes a click result from a timegrid-based view.
+func (a *App) handleTimeGridClick(
+	event *ical.Event, day time.Time, hitType string,
+	setDay func(time.Time), selectUID func(string),
+) tea.Cmd {
+	switch hitType {
+	case "event", "allday":
+		if event != nil {
+			setDay(day)
+			selectUID(event.UID)
+			calName := a.store.CalendarName(event.CalendarID)
+			a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
+			a.eventEditor.SetSize(a.width, a.height-3)
+		}
+	case "day-header":
+		if !day.IsZero() {
+			a.activeView().SetDate(day)
+			a.syncDateToHeader()
+		}
 	}
 	return nil
 }
