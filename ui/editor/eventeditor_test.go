@@ -75,8 +75,8 @@ func TestEventEditorOpenCreateDefaultTimes(t *testing.T) {
 	fields := editor.form.Fields()
 
 	dateField := fields[2]
-	if dateField.Value != "2026-02-18" {
-		t.Errorf("date field = %q, want %q", dateField.Value, "2026-02-18")
+	if dateField.Value != "18.02.2026" {
+		t.Errorf("date field = %q, want %q", dateField.Value, "18.02.2026")
 	}
 
 	startField := fields[3]
@@ -427,7 +427,7 @@ func TestEventEditorBuildEventFromFormTimed(t *testing.T) {
 	fields := editor.form.Fields()
 	fields[0].Value = "Meeting"
 	fields[1].Selected = 0
-	fields[2].Value = "2026-02-18"
+	fields[2].Value = "18.02.2026"
 	fields[3].Value = "14:00"
 	fields[4].Value = "15:30"
 	fields[5].Value = "Room 101"
@@ -470,7 +470,7 @@ func TestEventEditorBuildEventFromFormAllDay(t *testing.T) {
 	fields := editor.form.Fields()
 	fields[0].Value = "Holiday"
 	fields[1].Selected = 1
-	fields[2].Value = "2026-02-18"
+	fields[2].Value = "18.02.2026"
 
 	event := editor.buildEventFromForm()
 
