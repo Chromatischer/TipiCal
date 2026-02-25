@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -53,11 +55,12 @@ type App struct {
 	syncMgr *caldav.Sync
 
 	// Components
-	header      *Header
-	sidebar     *Sidebar
-	statusbar   *StatusBar
-	eventEditor *editor.EventEditor
-	search      *components.Search
+	header            *Header
+	sidebar           *Sidebar
+	statusbar         *StatusBar
+	eventEditor       *editor.EventEditor
+	search            *components.Search
+	widthWarningModal *components.Modal
 
 	// Views
 	viewType     config.ViewType
@@ -72,8 +75,10 @@ type App struct {
 	height int
 
 	// State
-	showSidebar bool
-	showHelp    bool
+	showSidebar      bool
+	userWantsSidebar bool
+	showHelp         bool
+	showWidthWarning bool
 }
 
 // currentDate returns today's date — used by sidebar.go and others in this package.
@@ -87,19 +92,27 @@ func NewApp(cfg *config.Config, store *ical.Store, syncMgr *caldav.Sync) *App {
 	styles := NewStyles(theme)
 
 	app := &App{
-		cfg:         cfg,
-		theme:       theme,
-		styles:      styles,
-		store:       store,
-		syncMgr:     syncMgr,
-		header:      NewHeader(styles, cfg.General.DefaultView, time.Now()),
-		sidebar:     NewSidebar(styles, cfg, store),
-		statusbar:   NewStatusBar(styles),
-		eventEditor: editor.NewEventEditor(theme, store),
-		search:      components.NewSearch(theme, store, cfg.Use24h()),
-		viewType:    cfg.General.DefaultView,
-		showSidebar: true,
+		cfg:              cfg,
+		theme:            theme,
+		styles:           styles,
+		store:            store,
+		syncMgr:          syncMgr,
+		header:           NewHeader(styles, cfg.General.DefaultView, time.Now()),
+		sidebar:          NewSidebar(styles, cfg, store),
+		statusbar:        NewStatusBar(styles),
+		eventEditor:      editor.NewEventEditor(theme, store),
+		search:           components.NewSearch(theme, store, cfg.Use24h()),
+		viewType:         cfg.General.DefaultView,
+		showSidebar:      true,
+		userWantsSidebar: true,
 	}
+
+	app.widthWarningModal = components.NewModal(
+		theme,
+		"Cannot Show Sidebar",
+		"Width insufficient to display sidebar",
+		[]components.ModalAction{{Label: "OK"}},
+	)
 
 	// Initialize all views
 	app.monthView = views.NewMonthView(theme, store, cfg)
@@ -274,19 +287,33 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.header.WaveTick()
 
 	case tea.MouseMsg:
-		if !a.search.IsActive() && !a.eventEditor.IsActive() && !a.showHelp {
-			switch msg.Button {
-			case tea.MouseButtonWheelUp:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if !a.search.IsActive() && !a.eventEditor.IsActive() && !a.showHelp {
 				a.activeView().MoveUp()
 				a.syncDateToHeader()
-			case tea.MouseButtonWheelDown:
+			}
+		case tea.MouseButtonWheelDown:
+			if !a.search.IsActive() && !a.eventEditor.IsActive() && !a.showHelp {
 				a.activeView().MoveDown()
 				a.syncDateToHeader()
+			}
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionPress {
+				return a, a.handleMouseClick(msg.X, msg.Y)
 			}
 		}
 		return a, nil
 
 	case tea.KeyMsg:
+		const minWidth = 80
+		const minHeight = 35
+		if a.width < minWidth || a.height < minHeight {
+			if msg.String() == "q" || msg.String() == "ctrl+c" {
+				return a, tea.Quit
+			}
+			return a, nil // swallow everything else
+		}
 		// If search is active, route keys to it
 		if a.search.IsActive() {
 			closed := a.search.HandleKey(msg.String())
@@ -323,6 +350,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If help is showing, any key closes it
 		if a.showHelp {
 			a.showHelp = false
+			return a, nil
+		}
+
+		// If width warning modal is showing, any key closes it
+		if a.showWidthWarning {
+			a.showWidthWarning = false
 			return a, nil
 		}
 
@@ -372,8 +405,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Toggle sidebar
 		case "b":
-			a.showSidebar = !a.showSidebar
-			a.updateLayout()
+			const minContentWidth = 84
+			minWidthWithSidebar := 25 + minContentWidth
+			if !a.userWantsSidebar && a.width < minWidthWithSidebar {
+				a.showWidthWarning = true
+			} else {
+				a.userWantsSidebar = !a.userWantsSidebar
+				a.updateLayout()
+			}
 
 		// Event management
 		case "n":
@@ -509,6 +548,178 @@ func (a *App) handleEditorResult(result *editor.EditorResult) tea.Cmd {
 	return nil
 }
 
+// handleMouseClick dispatches a left-click at terminal position (x, y).
+func (a *App) handleMouseClick(x, y int) tea.Cmd {
+	// Content area starts at row 2 (rows 0-1 are the header).
+	// Actual content area height: header(2) + statusbar(2) = 4 rows overhead.
+	contentY := y - 2
+	contentHeight := a.height - 4
+
+	// Event editor overlay — route clicks into it.
+	if a.eventEditor.IsActive() {
+		a.eventEditor.HandleMouse(x, contentY, contentHeight)
+		if sm := a.eventEditor.StatusMessage(); sm != "" {
+			a.statusbar.SetMessage(sm)
+			a.eventEditor.ClearStatusMessage()
+		}
+		if result := a.eventEditor.Result(); result != nil {
+			cmd := a.handleEditorResult(result)
+			a.eventEditor.ClearResult()
+			return cmd
+		}
+		return nil
+	}
+
+	// Width warning modal overlay.
+	if a.showWidthWarning {
+		action := a.widthWarningModal.HandleMouse(x, contentY, a.width, contentHeight)
+		if action >= 0 {
+			a.showWidthWarning = false
+		}
+		return nil
+	}
+
+	// Header row (row 0)
+	if y == 0 {
+		action := a.header.HitTest(x)
+		switch {
+		case action == "prev":
+			a.activeView().PrevPeriod()
+			a.syncDateToHeader()
+		case action == "next":
+			a.activeView().NextPeriod()
+			a.syncDateToHeader()
+		case strings.HasPrefix(action, "view:"):
+			viewStr := strings.TrimPrefix(action, "view:")
+			switch viewStr {
+			case "month":
+				a.switchView(config.ViewMonth)
+			case "week":
+				a.switchView(config.ViewWeek)
+			case "threeday":
+				a.switchView(config.ViewThreeDay)
+			case "day":
+				a.switchView(config.ViewDay)
+			case "agenda":
+				a.switchView(config.ViewAgenda)
+			}
+		}
+		return nil
+	}
+
+	// Status bar content row (last row)
+	if y == a.height-1 {
+		action := a.statusbar.HitTest(x, y, a.height)
+		switch action {
+		case "today":
+			a.activeView().SetDate(time.Now())
+			a.syncDateToHeader()
+		case "new":
+			a.eventEditor.OpenCreate(a.activeView().SelectedDate(), a.calendarNames())
+			a.eventEditor.SetSize(a.width, a.height-3)
+		case "edit":
+			if event := a.selectedEvent(); event != nil {
+				if a.isReadOnly(event) {
+					a.statusbar.SetMessage("Calendar is read-only")
+				} else {
+					a.eventEditor.OpenEdit(event, a.calendarNames())
+					a.eventEditor.SetSize(a.width, a.height-3)
+				}
+			}
+		case "delete":
+			if event := a.selectedEvent(); event != nil {
+				if a.isReadOnly(event) {
+					a.statusbar.SetMessage("Calendar is read-only")
+				} else {
+					a.eventEditor.OpenDelete(event)
+					a.eventEditor.SetSize(a.width, a.height-3)
+				}
+			}
+		case "search":
+			a.search.SetSize(a.width, a.height-3)
+			a.search.Open()
+		case "help":
+			a.showHelp = !a.showHelp
+		case "sidebar":
+			const minContentWidth = 84
+			minWidthWithSidebar := 25 + minContentWidth
+			if !a.userWantsSidebar && a.width < minWidthWithSidebar {
+				a.showWidthWarning = true
+			} else {
+				a.userWantsSidebar = !a.userWantsSidebar
+				a.updateLayout()
+			}
+		case "quit":
+			return tea.Quit
+		}
+		return nil
+	}
+
+	// Content area (rows 2 to height-3)
+	if y < 2 || y > a.height-3 {
+		return nil
+	}
+
+	// Sidebar click
+	if a.showSidebar && x < 25 {
+		if date, ok := a.sidebar.HitTestDate(x, contentY); ok {
+			a.activeView().SetDate(date)
+			a.syncDateToHeader()
+		}
+		return nil
+	}
+
+	contentX := x
+	if a.showSidebar {
+		contentX = x - 25
+	}
+
+	switch a.viewType {
+	case config.ViewMonth:
+		if date, ok := a.monthView.HitTestDay(contentX, contentY); ok {
+			a.switchView(config.ViewDay)
+			a.activeView().SetDate(date)
+			a.syncDateToHeader()
+		}
+	case config.ViewWeek:
+		event, day, hitType := a.weekView.HitTestAt(contentX, contentY)
+		return a.handleTimeGridClick(event, day, hitType,
+			a.weekView.SetSelectedDay, a.weekView.SelectEventByUID)
+	case config.ViewThreeDay:
+		event, day, hitType := a.threeDayView.HitTestAt(contentX, contentY)
+		return a.handleTimeGridClick(event, day, hitType,
+			a.threeDayView.SetSelectedDay, a.threeDayView.SelectEventByUID)
+	case config.ViewDay:
+		event, day, hitType := a.dayView.HitTestAt(contentX, contentY)
+		return a.handleTimeGridClick(event, day, hitType,
+			a.dayView.SetSelectedDay, a.dayView.SelectEventByUID)
+	}
+	return nil
+}
+
+// handleTimeGridClick processes a click result from a timegrid-based view.
+func (a *App) handleTimeGridClick(
+	event *ical.Event, day time.Time, hitType string,
+	setDay func(time.Time), selectUID func(string),
+) tea.Cmd {
+	switch hitType {
+	case "event", "allday":
+		if event != nil {
+			setDay(day)
+			selectUID(event.UID)
+			calName := a.store.CalendarName(event.CalendarID)
+			a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
+			a.eventEditor.SetSize(a.width, a.height-3)
+		}
+	case "day-header":
+		if !day.IsZero() {
+			a.activeView().SetDate(day)
+			a.syncDateToHeader()
+		}
+	}
+	return nil
+}
+
 // refreshTimeGridViews forces WeekView, ThreeDayView, and DayView to re-snapshot
 // events from the store so changes appear immediately without waiting for a sync.
 func (a *App) refreshTimeGridViews() {
@@ -533,11 +744,20 @@ func (a *App) syncDateToHeader() {
 }
 
 func (a *App) updateLayout() {
+	const minContentWidth = 84
 	sidebarWidth := 0
-	sidebarRenderedWidth := 0 // includes border
+	sidebarRenderedWidth := 0
+
+	minWidthWithSidebar := 25 + minContentWidth
+	if a.width < minWidthWithSidebar {
+		a.showSidebar = false
+	} else {
+		a.showSidebar = a.userWantsSidebar
+	}
+
 	if a.showSidebar {
 		sidebarWidth = 24
-		sidebarRenderedWidth = 25 // 24 content + 1 right border
+		sidebarRenderedWidth = 25
 	}
 
 	contentWidth := a.width - sidebarRenderedWidth
@@ -564,8 +784,19 @@ func (a *App) View() string {
 		return "Loading..."
 	}
 
+	const minWidth = 80
+	const minHeight = 35
+	if a.width < minWidth || a.height < minHeight {
+		msg := fmt.Sprintf("Terminal too small (%dx%d)\n Minimum: %dx%d",
+			a.width, a.height, minWidth, minHeight)
+		return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, msg)
+	}
+
 	// Header
 	header := a.header.View()
+
+	// Content area height
+	contentHeight := a.height - 4
 
 	// Content area
 	var content string
@@ -575,7 +806,10 @@ func (a *App) View() string {
 		sidebarContent := a.sidebar.View()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebarContent, viewContent)
 	} else {
-		content = viewContent
+		content = lipgloss.NewStyle().
+			Width(a.width).
+			Height(contentHeight).
+			Render(viewContent)
 	}
 
 	// Event editor overlay
@@ -591,6 +825,17 @@ func (a *App) View() string {
 	// Help overlay
 	if a.showHelp {
 		content = a.renderHelp()
+	}
+
+	// Width warning overlay
+	if a.showWidthWarning {
+		content = lipgloss.Place(
+			a.width,
+			contentHeight,
+			lipgloss.Center,
+			lipgloss.Center,
+			a.widthWarningModal.View(),
+		)
 	}
 
 	// Status bar

@@ -37,6 +37,30 @@ func (m *MiniCalendar) SetDate(d time.Time) {
 	m.selectedDay = d
 }
 
+// HitTestDate returns the date at the given position relative to the mini calendar's
+// top-left corner (0-indexed). Returns the date and true if a day cell was clicked.
+func (m *MiniCalendar) HitTestDate(relX, relY int) (time.Time, bool) {
+	// Row 0: month/year header (not a day)
+	// Row 1: weekday headers (not a day)
+	// Rows 2-7: day grid; each day cell is Width(3) = 3 cols
+	if relY < 2 || relX < 0 {
+		return time.Time{}, false
+	}
+	weekRow := relY - 2
+	colIdx := relX / 3
+	if colIdx > 6 {
+		return time.Time{}, false
+	}
+	grid := util.MonthGrid(m.year, m.month, m.startMonday)
+	if weekRow >= len(grid) {
+		return time.Time{}, false
+	}
+	if colIdx >= len(grid[weekRow]) {
+		return time.Time{}, false
+	}
+	return grid[weekRow][colIdx], true
+}
+
 // View renders the mini calendar (20 chars wide).
 func (m *MiniCalendar) View() string {
 	var lines []string

@@ -119,3 +119,26 @@ func (td *ThreeDayView) SelectedEvent() *ical.Event {
 	}
 	return td.grid.SelectedEvent()
 }
+
+// HitTestAt returns the event/day at position (relX, relY) within the view content area.
+func (td *ThreeDayView) HitTestAt(relX, relY int) (*ical.Event, time.Time, string) {
+	if td.grid == nil {
+		return nil, time.Time{}, ""
+	}
+	return td.grid.HitTestAt(relX, relY)
+}
+
+// SetSelectedDay changes the selected day without rebuilding the grid.
+func (td *ThreeDayView) SetSelectedDay(day time.Time) {
+	td.selectedDay = day
+	if td.grid != nil {
+		td.grid.SetSelectedDay(day)
+	}
+}
+
+// SelectEventByUID selects an event in the current day by UID.
+func (td *ThreeDayView) SelectEventByUID(uid string) {
+	if td.grid != nil {
+		td.grid.SelectEventByUID(uid)
+	}
+}

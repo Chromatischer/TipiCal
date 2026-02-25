@@ -123,3 +123,26 @@ func (wv *WeekView) SelectedEvent() *ical.Event {
 	}
 	return wv.grid.SelectedEvent()
 }
+
+// HitTestAt returns the event/day at position (relX, relY) within the view content area.
+func (wv *WeekView) HitTestAt(relX, relY int) (*ical.Event, time.Time, string) {
+	if wv.grid == nil {
+		return nil, time.Time{}, ""
+	}
+	return wv.grid.HitTestAt(relX, relY)
+}
+
+// SetSelectedDay changes the selected day without rebuilding the grid.
+func (wv *WeekView) SetSelectedDay(day time.Time) {
+	wv.selectedDay = day
+	if wv.grid != nil {
+		wv.grid.SetSelectedDay(day)
+	}
+}
+
+// SelectEventByUID selects an event in the current day by UID.
+func (wv *WeekView) SelectEventByUID(uid string) {
+	if wv.grid != nil {
+		wv.grid.SelectEventByUID(uid)
+	}
+}

@@ -114,3 +114,26 @@ func (dv *DayView) SelectedEvent() *ical.Event {
 	}
 	return dv.grid.SelectedEvent()
 }
+
+// HitTestAt returns the event/day at position (relX, relY) within the view content area.
+func (dv *DayView) HitTestAt(relX, relY int) (*ical.Event, time.Time, string) {
+	if dv.grid == nil {
+		return nil, time.Time{}, ""
+	}
+	return dv.grid.HitTestAt(relX, relY)
+}
+
+// SetSelectedDay changes the selected day without rebuilding the grid.
+func (dv *DayView) SetSelectedDay(day time.Time) {
+	dv.selectedDay = day
+	if dv.grid != nil {
+		dv.grid.SetSelectedDay(day)
+	}
+}
+
+// SelectEventByUID selects an event in the current day by UID.
+func (dv *DayView) SelectEventByUID(uid string) {
+	if dv.grid != nil {
+		dv.grid.SelectEventByUID(uid)
+	}
+}

@@ -122,3 +122,30 @@ func (t *Theme) CalendarColor(i int) lipgloss.Color {
 	}
 	return t.CalendarColors[i%len(t.CalendarColors)]
 }
+
+// NewMonoTheme creates a colorless theme for NO_COLOR support.
+func NewMonoTheme() *Theme {
+	return &Theme{
+		IsDark:     true,
+		Background: lipgloss.Color(""),
+		Surface:    lipgloss.Color(""),
+		SurfaceAlt: lipgloss.Color(""),
+		Overlay:    lipgloss.Color(""),
+		Text:       lipgloss.Color(""),
+		TextMuted:  lipgloss.Color(""),
+		TextFaint:  lipgloss.Color(""),
+		Link:       lipgloss.Color(""),
+		Accent:     lipgloss.Color(""),
+		Today:      lipgloss.Color(""),
+		Selected:   lipgloss.Color(""),
+		Border:     lipgloss.Color(""),
+		Error:      lipgloss.Color(""),
+		Success:    lipgloss.Color(""),
+		Warning:    lipgloss.Color(""),
+		CalendarColors: []lipgloss.Color{
+			lipgloss.Color(""), lipgloss.Color(""), lipgloss.Color(""),
+			lipgloss.Color(""), lipgloss.Color(""), lipgloss.Color(""),
+			lipgloss.Color(""), lipgloss.Color(""),
+		},
+	}
+}

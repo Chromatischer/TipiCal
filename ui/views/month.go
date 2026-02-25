@@ -110,6 +110,44 @@ func (mv *MonthView) updateMonth() {
 	mv.month = mv.selectedDay.Month()
 }
 
+// HitTestDay returns the date at the given position relative to the month view content area
+// (relX, relY are 0-indexed from the top-left of the view content). Returns the date and
+// true if a day cell was clicked.
+func (mv *MonthView) HitTestDay(relX, relY int) (time.Time, bool) {
+	// Row 0: weekday headers, Row 1: separator — not day cells
+	if relY < 2 || relX < 0 {
+		return time.Time{}, false
+	}
+
+	colWidth := mv.width/7 - 2
+	if colWidth < 10 {
+		colWidth = 10
+	}
+	cellRenderWidth := colWidth + 2 // border adds 1 on each side
+
+	cellHeight := (mv.height-2)/6 - 2
+	if cellHeight < 3 {
+		cellHeight = 3
+	}
+	cellRenderHeight := cellHeight + 2 // border adds 1 on top and bottom
+
+	rowInGrid := relY - 2
+	weekIdx := rowInGrid / cellRenderHeight
+	colIdx := relX / cellRenderWidth
+	if colIdx > 6 {
+		colIdx = 6
+	}
+
+	grid := util.MonthGrid(mv.year, mv.month, mv.startMonday)
+	if weekIdx >= len(grid) {
+		return time.Time{}, false
+	}
+	if colIdx >= len(grid[weekIdx]) {
+		return time.Time{}, false
+	}
+	return grid[weekIdx][colIdx], true
+}
+
 // View renders the month grid.
 func (mv *MonthView) View() string {
 	grid := util.MonthGrid(mv.year, mv.month, mv.startMonday)

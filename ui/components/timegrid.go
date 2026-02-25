@@ -161,6 +161,154 @@ func (tg *TimeGrid) SetSize(w, h int) {
 	tg.height = h
 }
 
+// SetSelectedDay changes the selected day column without rebuilding the grid.
+func (tg *TimeGrid) SetSelectedDay(day time.Time) {
+	tg.selected = day
+	tg.selectedEventIdx = -1
+}
+
+// SelectEventByUID selects an event in the currently selected day by UID.
+func (tg *TimeGrid) SelectEventByUID(uid string) {
+	key := tg.selected.Format("2006-01-02")
+	for i, e := range tg.events[key] {
+		if e.UID == uid {
+			tg.selectedEventIdx = i
+			return
+		}
+	}
+}
+
+// HitTestAt returns the event and/or day at the given position relative to the time grid's
+// content area (relX, relY are 0-indexed from the top-left of the grid). hitType is one of
+// "event", "allday", "day-header", "empty", or "" (outside clickable area).
+func (tg *TimeGrid) HitTestAt(relX, relY int) (event *ical.Event, day time.Time, hitType string) {
+	numDays := len(tg.days)
+	if numDays == 0 {
+		return nil, time.Time{}, ""
+	}
+
+	timeLabelWidth := 6
+	colWidth := (tg.width - timeLabelWidth - 1) / numDays
+	contentStartX := timeLabelWidth + 1
+
+	// Determine which day column was clicked
+	if relX < contentStartX {
+		return nil, time.Time{}, "" // clicked on time label area
+	}
+	colIdx := (relX - contentStartX) / colWidth
+	if colIdx < 0 || colIdx >= numDays {
+		return nil, time.Time{}, ""
+	}
+	day = tg.days[colIdx]
+	key := day.Format("2006-01-02")
+
+	headerLines := 2 + tg.allDayRowCount()
+
+	// Row 0: day header
+	if relY == 0 {
+		return nil, day, "day-header"
+	}
+	// Row 1: thin separator
+	if relY == 1 {
+		return nil, time.Time{}, ""
+	}
+	// All-day section
+	if relY < headerLines {
+		// Last row of the allday section is the thick separator
+		if relY == headerLines-1 {
+			return nil, time.Time{}, ""
+		}
+		allDayRow := relY - 2
+		// Collect visible all-day events (up to maxVisibleRows)
+		const maxVisibleRows = 3
+		count := 0
+		for _, e := range tg.events[key] {
+			if e.AllDay {
+				if count == allDayRow {
+					return e, day, "allday"
+				}
+				count++
+				if count >= maxVisibleRows {
+					break
+				}
+			}
+		}
+		return nil, day, "allday"
+	}
+
+	// Time slot area
+	rph := tg.rowsPerHour()
+	timeRow := relY - headerLines
+	hourOffset := timeRow / rph
+	hour := tg.startHour + tg.scrollY + hourOffset
+	if hour < tg.startHour || hour >= tg.endHour {
+		return nil, time.Time{}, ""
+	}
+
+	dayEvents := tg.events[key]
+	oInfo := tg.findOverlapInfo(day, dayEvents)
+	primary, secondary := tg.findCellEvents(hour, day, dayEvents, oInfo)
+
+	// Apply sub-row filtering (same logic as renderHourCell)
+	subRow := timeRow % rph
+	subRowStartMinute := (subRow * 60) / rph
+	subRowEndMinute := ((subRow + 1) * 60) / rph
+	subRowStart := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowStartMinute, 0, 0, day.Location())
+	subRowEnd := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowEndMinute, 0, 0, day.Location())
+
+	if primary != nil && util.SameDay(primary.Start, day) && !primary.Start.Before(subRowEnd) {
+		primary = nil
+	}
+	if secondary != nil && util.SameDay(secondary.Start, day) && !secondary.Start.Before(subRowEnd) {
+		secondary = nil
+	}
+	if primary != nil && !primary.End.After(subRowStart) {
+		primary = nil
+	}
+	if secondary != nil && !secondary.End.After(subRowStart) {
+		secondary = nil
+	}
+
+	if primary == nil && secondary == nil {
+		return nil, day, "empty"
+	}
+
+	// When two events overlap, determine which one occupies the content area at the
+	// clicked x position using the same logic as renderHourCell.
+	if secondary != nil {
+		colStartX := contentStartX + colIdx*colWidth
+		xInCol := relX - colStartX
+
+		// The sidebar bar (1 col wide) starts just after the border char (col 0 of the column)
+		if xInCol <= 1 && primary != nil {
+			return primary, day, "event"
+		}
+
+		// Determine content event (mirrors renderHourCell logic)
+		contentEvent := secondary
+		isPriStart := primary != nil && util.SameDay(primary.Start, day) &&
+			!primary.Start.Before(subRowStart) && primary.Start.Before(subRowEnd)
+		isSecStart := util.SameDay(secondary.Start, day) &&
+			!secondary.Start.Before(subRowStart) && secondary.Start.Before(subRowEnd)
+		if !util.SameDay(secondary.Start, day) {
+			isSecStart = hour == tg.startHour && subRow == 0
+		}
+		if primary != nil && !util.SameDay(primary.Start, day) {
+			isPriStart = hour == tg.startHour && subRow == 0
+		}
+		if isPriStart && !isSecStart {
+			contentEvent = primary
+		} else if isPriStart && isSecStart && primary != nil && !primary.Start.After(secondary.Start) {
+			contentEvent = primary
+		} else if !isPriStart && !isSecStart && primary != nil && primary.Start.Equal(secondary.Start) {
+			contentEvent = primary
+		}
+		return contentEvent, day, "event"
+	}
+
+	return primary, day, "event"
+}
+
 // ScrollUp scrolls the time grid up.
 func (tg *TimeGrid) ScrollUp() {
 	if tg.scrollY > 0 {
