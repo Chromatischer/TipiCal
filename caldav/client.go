@@ -115,13 +115,12 @@ func resolvePassword(calCfg *config.CalendarConfig) (string, error) {
 	}
 
 	if calCfg.PasswordCmd != "" {
-		parts := strings.Fields(calCfg.PasswordCmd)
-		if len(parts) == 0 {
-			return "", fmt.Errorf("empty password_cmd")
-		}
-		cmd := exec.Command(parts[0], parts[1:]...)
+		cmd := exec.Command("sh", "-c", calCfg.PasswordCmd)
 		out, err := cmd.Output()
 		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+				return "", fmt.Errorf("running password_cmd %q: %w: %s", calCfg.PasswordCmd, err, strings.TrimSpace(string(ee.Stderr)))
+			}
 			return "", fmt.Errorf("running password_cmd %q: %w", calCfg.PasswordCmd, err)
 		}
 		return strings.TrimSpace(string(out)), nil
