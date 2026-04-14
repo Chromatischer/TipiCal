@@ -189,6 +189,9 @@ func (tg *TimeGrid) HitTestAt(relX, relY int) (event *ical.Event, day time.Time,
 
 	timeLabelWidth := 6
 	colWidth := (tg.width - timeLabelWidth - 1) / numDays
+	if colWidth < 10 {
+		colWidth = 10
+	}
 	contentStartX := timeLabelWidth + 1
 
 	// Determine which day column was clicked
@@ -237,10 +240,55 @@ func (tg *TimeGrid) HitTestAt(relX, relY int) (event *ical.Event, day time.Time,
 	}
 
 	// Time slot area
-	rph := tg.rowsPerHour()
 	timeRow := relY - headerLines
-	hourOffset := timeRow / rph
-	hour := tg.startHour + tg.scrollY + hourOffset
+	if timeRow < 0 {
+		return nil, time.Time{}, ""
+	}
+
+	// Map the clicked row to (hour, subRow) using the same variable row
+	// distribution as View() (some early hours may get an extra row).
+	rphBase := tg.rowsPerHour()
+	availableRows := tg.height - headerLines
+	if availableRows < 1 {
+		availableRows = 1
+	}
+	if timeRow >= availableRows {
+		return nil, time.Time{}, ""
+	}
+
+	visibleHours := availableRows / rphBase
+	if visibleHours < 1 {
+		visibleHours = 1
+	}
+	totalHours := tg.endHour - tg.startHour - tg.scrollY
+	if totalHours < 0 {
+		totalHours = 0
+	}
+	if totalHours > visibleHours {
+		totalHours = visibleHours
+	}
+	if totalHours == 0 {
+		return nil, time.Time{}, ""
+	}
+
+	remainder := availableRows - (rphBase * totalHours)
+	hour := -1
+	subRow := 0
+	currentRPH := rphBase
+	row := timeRow
+	for hourIndex := 0; hourIndex < totalHours; hourIndex++ {
+		rowsThisHour := rphBase
+		if hourIndex < remainder {
+			rowsThisHour = rphBase + 1
+		}
+		if row < rowsThisHour {
+			hour = tg.startHour + tg.scrollY + hourIndex
+			subRow = row
+			currentRPH = rowsThisHour
+			break
+		}
+		row -= rowsThisHour
+	}
 	if hour < tg.startHour || hour >= tg.endHour {
 		return nil, time.Time{}, ""
 	}
@@ -250,9 +298,8 @@ func (tg *TimeGrid) HitTestAt(relX, relY int) (event *ical.Event, day time.Time,
 	primary, secondary := tg.findCellEvents(hour, day, dayEvents, oInfo)
 
 	// Apply sub-row filtering (same logic as renderHourCell)
-	subRow := timeRow % rph
-	subRowStartMinute := (subRow * 60) / rph
-	subRowEndMinute := ((subRow + 1) * 60) / rph
+	subRowStartMinute := (subRow * 60) / currentRPH
+	subRowEndMinute := ((subRow + 1) * 60) / currentRPH
 	subRowStart := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowStartMinute, 0, 0, day.Location())
 	subRowEnd := time.Date(day.Year(), day.Month(), day.Day(), hour, subRowEndMinute, 0, 0, day.Location())
 
