@@ -94,14 +94,44 @@ func (td *ThreeDayView) MoveDown() {
 
 // MoveLeft moves to previous day.
 func (td *ThreeDayView) MoveLeft() {
+	if td.grid == nil {
+		td.selectedDay = td.selectedDay.AddDate(0, 0, -1)
+		td.rebuildGrid()
+		return
+	}
+
+	refMinutes := td.grid.VisibleStartHour() * 60
+	if ev := td.grid.SelectedEvent(); ev != nil && !ev.AllDay {
+		refMinutes = ev.Start.Hour()*60 + ev.Start.Minute()
+	}
+	oldScroll := td.grid.ScrollY()
+
 	td.selectedDay = td.selectedDay.AddDate(0, 0, -1)
 	td.rebuildGrid()
+	td.grid.SetScrollY(oldScroll)
+	td.grid.SetSelectedDay(td.selectedDay)
+	td.grid.SelectClosestEvent(refMinutes)
 }
 
 // MoveRight moves to next day.
 func (td *ThreeDayView) MoveRight() {
+	if td.grid == nil {
+		td.selectedDay = td.selectedDay.AddDate(0, 0, 1)
+		td.rebuildGrid()
+		return
+	}
+
+	refMinutes := td.grid.VisibleStartHour() * 60
+	if ev := td.grid.SelectedEvent(); ev != nil && !ev.AllDay {
+		refMinutes = ev.Start.Hour()*60 + ev.Start.Minute()
+	}
+	oldScroll := td.grid.ScrollY()
+
 	td.selectedDay = td.selectedDay.AddDate(0, 0, 1)
 	td.rebuildGrid()
+	td.grid.SetScrollY(oldScroll)
+	td.grid.SetSelectedDay(td.selectedDay)
+	td.grid.SelectClosestEvent(refMinutes)
 }
 
 // View renders the 3-day view.

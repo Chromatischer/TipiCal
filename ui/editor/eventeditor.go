@@ -227,7 +227,7 @@ func (ee *EventEditor) HandleMouse(x, y, containerHeight int) {
 	switch ee.mode {
 	case ModeCreate, ModeEdit:
 		if ee.form != nil {
-			ee.form.HandleMouse(x, y, ee.width, containerHeight)
+			ee.form.HandleMouse(x, y+1, ee.width, containerHeight)
 			ee.syncAllDayVisibility()
 			if ee.form.IsSubmitted() {
 				event := ee.buildEventFromForm()
@@ -245,7 +245,7 @@ func (ee *EventEditor) HandleMouse(x, y, containerHeight int) {
 
 	case ModeDelete:
 		if ee.deleteModal != nil {
-			action := ee.deleteModal.HandleMouse(x, y, ee.width, containerHeight)
+			action := ee.deleteModal.HandleMouse(x, y+1, ee.width, containerHeight)
 			switch action {
 			case 0: // Cancel
 				ee.result = &EditorResult{Action: "cancel"}
@@ -258,7 +258,7 @@ func (ee *EventEditor) HandleMouse(x, y, containerHeight int) {
 		}
 
 	case ModeDetail:
-		ee.handleDetailMouse(x, y, containerHeight)
+		ee.handleDetailMouse(x, y+1, containerHeight)
 	}
 }
 

@@ -53,6 +53,20 @@ type Form struct {
 	buttonRowY     int
 }
 
+const formLabelWidth = 13
+
+func (f *Form) inputWidth() int {
+	formWidth := f.width - 4
+	if formWidth < 30 {
+		formWidth = 30
+	}
+	inputWidth := formWidth - 16
+	if inputWidth < 10 {
+		inputWidth = 10
+	}
+	return inputWidth
+}
+
 // NewForm creates a new form.
 func NewForm(theme *config.Theme, title string, fields []FormField) *Form {
 	return &Form{
@@ -370,15 +384,10 @@ func (f *Form) View() string {
 	lines = append(lines, titleStyle.Render(f.title))
 	lines = append(lines, "")
 
-	inputWidth := formWidth - 16
-	if inputWidth < 10 {
-		inputWidth = 10
-	}
+	inputWidth := f.inputWidth()
 
-	// labelWidth = label Width(12) + MarginRight(1)
-	const labelWidth = 13
 	underlineStyle := lipgloss.NewStyle().Foreground(f.theme.Accent)
-	underlineLine := strings.Repeat(" ", labelWidth) + underlineStyle.Render(strings.Repeat("─", inputWidth))
+	underlineLine := strings.Repeat(" ", formLabelWidth) + underlineStyle.Render(strings.Repeat("─", inputWidth))
 
 	f.fieldBounds = make([]fieldBound, len(f.fields))
 	for i, field := range f.fields {
@@ -396,7 +405,7 @@ func (f *Form) View() string {
 		switch field.Type {
 		case FieldCheckbox:
 			label := labelStyle.Render(field.Label + ":")
-			input := f.renderCheckbox(field, isFocused)
+			input := f.renderCheckbox(field, inputWidth, isFocused)
 			lines = append(lines, label+input)
 			f.fieldBounds[i] = fieldBound{top: topRow, bottom: topRow}
 			if isFocused {
@@ -521,7 +530,12 @@ func (f *Form) HandleMouse(x, y, containerWidth, containerHeight int) {
 		if localY >= bounds.top && localY <= bounds.bottom {
 			f.focused = i
 			if f.fields[i].Type == FieldCheckbox {
-				f.fields[i].Selected ^= 1
+				inputX := localX - 2 - formLabelWidth
+				if selected, ok := checkboxSelectionAtX(inputX, f.inputWidth()); ok {
+					f.fields[i].Selected = selected
+				} else {
+					f.fields[i].Selected ^= 1
+				}
 			}
 			f.cursor = len([]rune(f.fields[i].Value))
 			return
@@ -623,25 +637,68 @@ func (f *Form) renderTextArea(field FormField, width int, focused bool, labelSty
 	return result
 }
 
-func (f *Form) renderCheckbox(field FormField, focused bool) string {
-	mark := " "
-	if field.Selected == 1 {
-		mark = "x"
-	}
-	indicator := fmt.Sprintf("[%s]", mark)
+func (f *Form) renderCheckbox(field FormField, width int, focused bool) string {
+	pad := checkboxSegmentPadding(width)
+	segmentBase := lipgloss.NewStyle().Padding(0, pad)
 
-	style := lipgloss.NewStyle().Padding(0, 1)
+	activeSegment := segmentBase.
+		Background(f.theme.Accent).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Bold(true)
+
+	inactiveSegment := segmentBase.
+		Foreground(f.theme.TextFaint)
+
 	if focused {
-		style = style.
-			Background(f.theme.Surface).
-			Foreground(f.theme.Accent).
-			Bold(true)
-	} else {
-		style = style.
-			Background(f.theme.SurfaceAlt).
-			Foreground(f.theme.Text)
+		inactiveSegment = inactiveSegment.Foreground(f.theme.TextMuted)
 	}
-	return style.Render(indicator)
+
+	offSegment := inactiveSegment.Render("Timed")
+	onSegment := inactiveSegment.Render("All Day")
+	if field.Selected == 1 {
+		onSegment = activeSegment.Render("All Day")
+	} else {
+		offSegment = activeSegment.Render("Timed")
+	}
+
+	toggle := lipgloss.JoinHorizontal(lipgloss.Left, offSegment, " ", onSegment)
+	return lipgloss.NewStyle().
+		Width(width).
+		Padding(0, 1).
+		Render(toggle)
+}
+
+func checkboxSelectionAtX(inputX, width int) (int, bool) {
+	if inputX < 0 || inputX >= width {
+		return 0, false
+	}
+
+	pad := checkboxSegmentPadding(width)
+	segmentStyle := lipgloss.NewStyle().Padding(0, pad)
+	offWidth := lipgloss.Width(segmentStyle.Render("Timed"))
+	onWidth := lipgloss.Width(segmentStyle.Render("All Day"))
+
+	offStart := 1
+	offEnd := offStart + offWidth
+	onStart := offEnd + 1
+	onEnd := onStart + onWidth
+
+	switch {
+	case inputX >= offStart && inputX < offEnd:
+		return 0, true
+	case inputX >= onStart && inputX < onEnd:
+		return 1, true
+	default:
+		return 0, false
+	}
+}
+
+func checkboxSegmentPadding(width int) int {
+	labelsWidth := lipgloss.Width("Timed") + 1 + lipgloss.Width("All Day")
+	if width >= labelsWidth+4 {
+		return 1
+	}
+	return 0
 }
 
 func (f *Form) renderSelect(field FormField, width int, focused bool) string {
