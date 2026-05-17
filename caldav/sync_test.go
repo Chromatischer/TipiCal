@@ -312,6 +312,42 @@ func TestEventToIcalRoundTrip(t *testing.T) {
 		}
 	})
 
+	t.Run("recurring event preserves RRULE", func(t *testing.T) {
+		original := &ical.Event{
+			UID:            "recurring-round-trip",
+			Summary:        "Recurring Round Trip",
+			Start:          time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC),
+			End:            time.Date(2026, 1, 15, 11, 0, 0, 0, time.UTC),
+			Recurring:      true,
+			RecurrenceRule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE",
+		}
+
+		cal := eventToIcal(original)
+		prop := cal.Children[0].Props.Get(goical.PropRecurrenceRule)
+		if prop == nil {
+			t.Fatal("RRULE was not emitted")
+		}
+		if prop.Value != original.RecurrenceRule {
+			t.Errorf("RRULE = %q, want %q", prop.Value, original.RecurrenceRule)
+		}
+
+		events, err := parseCalendarObject(cal, 0)
+		if err != nil {
+			t.Fatalf("parseCalendarObject() error = %v", err)
+		}
+		if len(events) != 1 {
+			t.Fatalf("expected 1 event, got %d", len(events))
+		}
+
+		e := events[0]
+		if !e.Recurring {
+			t.Error("Recurring should be true")
+		}
+		if e.RecurrenceRule != original.RecurrenceRule {
+			t.Errorf("RecurrenceRule = %q, want %q", e.RecurrenceRule, original.RecurrenceRule)
+		}
+	})
+
 	t.Run("event with no Description/Location", func(t *testing.T) {
 		original := &ical.Event{
 			UID:     "no-optional-uid",
