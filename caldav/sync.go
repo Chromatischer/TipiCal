@@ -358,6 +358,11 @@ func eventToIcal(event *ical.Event) *goical.Calendar {
 	if event.Status != "" {
 		comp.Props.SetText(goical.PropStatus, event.Status)
 	}
+	if event.Recurring && event.RecurrenceRule != "" {
+		rrule := goical.NewProp(goical.PropRecurrenceRule)
+		rrule.Value = event.RecurrenceRule
+		comp.Props.Set(rrule)
+	}
 
 	now := time.Now().UTC()
 	dtstamp := goical.NewProp(goical.PropDateTimeStamp)
