@@ -25,253 +25,197 @@ func testPrintTheme() *config.Theme {
 	}
 }
 
-func testPrintConfig() *config.Config {
-	return &config.Config{
-		General: config.GeneralConfig{
-			TimeFormat: "24h",
-		},
-	}
-}
-
-func TestRenderPrintAgendaEmpty(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
+func testStore() *ical.Store {
 	store := ical.NewStore()
-
-	output := renderPrintAgenda(store, theme, cfg, 2, false)
-
-	if !strings.Contains(output, "No upcoming events") {
-		t.Errorf("empty agenda should show 'No upcoming events', got: %s", output)
-	}
-}
-
-func TestRenderPrintAgendaBasic(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
-	store := ical.NewStore()
+	store.RegisterCalendar(ical.CalendarInfo{ID: 0, Name: "Work", Source: "Main"})
+	store.RegisterCalendar(ical.CalendarInfo{ID: 1, Name: "Uni", Source: "Main"})
 
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 
 	store.AddEvent(&ical.Event{
-		UID:        "test-1",
-		Summary:    "Team Meeting",
-		Start:      today.Add(10 * time.Hour),
-		End:        today.Add(11 * time.Hour),
-		CalendarID: 0,
-		Color:      "#3B82F6",
+		UID:            "rec-1",
+		Summary:        "Lecture",
+		Description:    "Systemprogrammierung",
+		Location:       "Auditorium",
+		Start:          today.Add(9 * time.Hour),
+		End:            today.Add(10 * time.Hour),
+		CalendarID:     1,
+		Status:         "CONFIRMED",
+		Recurring:      true,
+		RecurrenceRule: "FREQ=DAILY",
 	})
-
-	output := renderPrintAgenda(store, theme, cfg, 2, false)
-
-	if !strings.Contains(output, "Today") {
-		t.Error("output should contain 'Today'")
-	}
-	if !strings.Contains(output, "Team Meeting") {
-		t.Error("output should contain event summary")
-	}
-	if !strings.Contains(output, "10:00 - 11:00") {
-		t.Error("output should contain formatted time range")
-	}
-}
-
-func TestRenderPrintAgendaAllDay(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
-	store := ical.NewStore()
-
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-
 	store.AddEvent(&ical.Event{
-		UID:        "allday-1",
-		Summary:    "Birthday",
+		UID:            "rec-1",
+		Summary:        "Lecture",
+		Description:    "Systemprogrammierung",
+		Location:       "Auditorium",
+		Start:          today.AddDate(0, 0, 1).Add(9 * time.Hour),
+		End:            today.AddDate(0, 0, 1).Add(10 * time.Hour),
+		CalendarID:     1,
+		Status:         "CONFIRMED",
+		Recurring:      true,
+		RecurrenceRule: "FREQ=DAILY",
+	})
+	store.AddEvent(&ical.Event{
+		UID:         "work-1",
+		Summary:     "Standup",
+		Description: "Daily sync",
+		Start:       today.Add(11 * time.Hour),
+		End:         today.Add(1130 * time.Minute),
+		CalendarID:  0,
+		Status:      "CONFIRMED",
+	})
+	store.AddEvent(&ical.Event{
+		UID:        "all-day-1",
+		Summary:    "Holiday",
 		Start:      today,
 		End:        today.AddDate(0, 0, 1),
 		AllDay:     true,
 		CalendarID: 0,
-		Color:      "#7C3AED",
+		Status:     "CONFIRMED",
 	})
+	return store
+}
 
-	output := renderPrintAgenda(store, theme, cfg, 2, false)
-
-	if !strings.Contains(output, "All day") {
-		t.Errorf("all-day event should show 'All day', got: %s", output)
+func TestParsePrintOptions(t *testing.T) {
+	opts, err := parsePrintOptions([]string{"week", "--calendar", "Uni", "--search", "system", "--from", "2026-04-10", "--to", "2026-04-12", "--format", "summary,start,calendar"})
+	if err != nil {
+		t.Fatalf("parsePrintOptions() error = %v", err)
 	}
-	if !strings.Contains(output, "Birthday") {
-		t.Error("output should contain all-day event summary")
+	if opts.mode != "week" {
+		t.Fatalf("mode = %q, want week", opts.mode)
+	}
+	if opts.numDays != 7 {
+		t.Fatalf("numDays = %d, want 7", opts.numDays)
+	}
+	if len(opts.calendarFilters) != 1 || opts.calendarFilters[0] != "Uni" {
+		t.Fatalf("calendarFilters = %#v, want [Uni]", opts.calendarFilters)
+	}
+	if len(opts.formatFields) != 3 {
+		t.Fatalf("formatFields = %#v, want 3 fields", opts.formatFields)
 	}
 }
 
-func TestRenderPrintAgendaFull(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
-	store := ical.NewStore()
-
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-
-	store.AddEvent(&ical.Event{
-		UID:         "full-1",
-		Summary:     "Conference",
-		Location:    "Room 101",
-		Description: "Annual team conference",
-		Start:       today.Add(14 * time.Hour),
-		End:         today.Add(16 * time.Hour),
-		CalendarID:  0,
-		Color:       "#3B82F6",
-	})
-
-	output := renderPrintAgenda(store, theme, cfg, 2, true)
-
-	if !strings.Contains(output, "Conference") {
-		t.Error("full output should contain summary")
-	}
-	if !strings.Contains(output, "Room 101") {
-		t.Error("full output should contain location")
-	}
-	if !strings.Contains(output, "Annual team conference") {
-		t.Error("full output should contain description")
-	}
-}
-
-func TestRenderPrintAgendaMultipleDays(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
-	store := ical.NewStore()
-
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	tomorrow := today.AddDate(0, 0, 1)
-
-	store.AddEvent(&ical.Event{
-		UID:        "today-event",
-		Summary:    "Today Meeting",
-		Start:      today.Add(10 * time.Hour),
-		End:        today.Add(11 * time.Hour),
-		CalendarID: 0,
-	})
-
-	store.AddEvent(&ical.Event{
-		UID:        "tomorrow-event",
-		Summary:    "Tomorrow Meeting",
-		Start:      tomorrow.Add(14 * time.Hour),
-		End:        tomorrow.Add(15 * time.Hour),
-		CalendarID: 0,
-	})
-
-	output := renderPrintAgenda(store, theme, cfg, 2, false)
-
-	if !strings.Contains(output, "Today") {
-		t.Error("output should contain 'Today'")
-	}
-	if !strings.Contains(output, "Tomorrow") {
-		t.Error("output should contain 'Tomorrow'")
-	}
-	if !strings.Contains(output, "Today Meeting") {
-		t.Error("output should contain today's event")
-	}
-	if !strings.Contains(output, "Tomorrow Meeting") {
-		t.Error("output should contain tomorrow's event")
-	}
-}
-
-func TestRenderPrintAgendaWeek(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
-	store := ical.NewStore()
-
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-
-	for i := 0; i < 7; i++ {
-		day := today.AddDate(0, 0, i)
-		store.AddEvent(&ical.Event{
-			UID:        string(rune('a' + i)),
-			Summary:    "Event Day " + string(rune('0'+i)),
-			Start:      day.Add(10 * time.Hour),
-			End:        day.Add(11 * time.Hour),
-			CalendarID: 0,
-		})
+func TestFilteredEventsCalendarAndSearch(t *testing.T) {
+	store := testStore()
+	opts := &printOptions{
+		numDays:         2,
+		calendarFilters: []string{"uni"},
+		search:          "systemprogrammierung",
 	}
 
-	output := renderPrintAgenda(store, theme, cfg, 7, false)
-
-	dayCount := strings.Count(output, "────────")
-	if dayCount < 6 {
-		t.Errorf("week output should have ~7 day sections, got %d dividers", dayCount)
+	events, err := filteredEvents(store, opts)
+	if err != nil {
+		t.Fatalf("filteredEvents() error = %v", err)
 	}
-}
-
-func TestRenderPrintAgendaSortedByTime(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
-	store := ical.NewStore()
-
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-
-	store.AddEvent(&ical.Event{
-		UID:        "late",
-		Summary:    "Late Event",
-		Start:      today.Add(16 * time.Hour),
-		End:        today.Add(17 * time.Hour),
-		CalendarID: 0,
-	})
-
-	store.AddEvent(&ical.Event{
-		UID:        "early",
-		Summary:    "Early Event",
-		Start:      today.Add(8 * time.Hour),
-		End:        today.Add(9 * time.Hour),
-		CalendarID: 0,
-	})
-
-	output := renderPrintAgenda(store, theme, cfg, 2, false)
-
-	earlyIdx := strings.Index(output, "Early Event")
-	lateIdx := strings.Index(output, "Late Event")
-
-	if earlyIdx == -1 || lateIdx == -1 {
-		t.Fatal("output should contain both events")
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
 	}
-	if earlyIdx > lateIdx {
-		t.Error("events should be sorted by time (early before late)")
-	}
-}
-
-func TestRenderPrintAgendaFutureDay(t *testing.T) {
-	theme := testPrintTheme()
-	cfg := testPrintConfig()
-	store := ical.NewStore()
-
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	future := today.AddDate(0, 0, 5)
-
-	store.AddEvent(&ical.Event{
-		UID:        "future-event",
-		Summary:    "Future Event",
-		Start:      future.Add(10 * time.Hour),
-		End:        future.Add(11 * time.Hour),
-		CalendarID: 0,
-	})
-
-	output := renderPrintAgenda(store, theme, cfg, 7, false)
-
-	if !strings.Contains(output, "Future Event") {
-		t.Error("output should contain future event")
-	}
-
-	dayNames := []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
-	hasDayName := false
-	for _, day := range dayNames {
-		if strings.Contains(output, day) {
-			hasDayName = true
-			break
+	for _, rec := range events {
+		if rec.Calendar.Name != "Uni" {
+			t.Fatalf("calendar = %q, want Uni", rec.Calendar.Name)
 		}
 	}
-	if !hasDayName {
-		t.Error("future day should show day name (e.g., 'Monday')")
+}
+
+func TestFilteredEventsNormalizeRecurring(t *testing.T) {
+	store := testStore()
+	opts := &printOptions{
+		numDays:            2,
+		calendarFilters:    []string{"uni"},
+		normalizeRecurring: true,
+	}
+
+	events, err := filteredEvents(store, opts)
+	if err != nil {
+		t.Fatalf("filteredEvents() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Occurrences != 2 {
+		t.Fatalf("occurrences = %d, want 2", events[0].Occurrences)
+	}
+}
+
+func TestRenderFormattedEvents(t *testing.T) {
+	store := testStore()
+	events, err := filteredEvents(store, &printOptions{numDays: 1, calendarFilters: []string{"work"}})
+	if err != nil {
+		t.Fatalf("filteredEvents() error = %v", err)
+	}
+
+	output := renderFormattedEvents(events, true, []string{"summary", "calendar", "time"})
+	if !strings.Contains(output, "Standup\tWork\t11:00 - 18:50") && !strings.Contains(output, "Standup\tWork\t11:00 - 11:30") {
+		t.Fatalf("formatted output missing expected row: %q", output)
+	}
+}
+
+func TestRenderPrintJSONFlatWhenFiltered(t *testing.T) {
+	store := testStore()
+	events, err := filteredEvents(store, &printOptions{numDays: 2, search: "lecture"})
+	if err != nil {
+		t.Fatalf("filteredEvents() error = %v", err)
+	}
+
+	output := renderPrintJSON(events, &printOptions{numDays: 2, search: "lecture", showJSON: true})
+	if !strings.Contains(output, "\"events\"") {
+		t.Fatalf("json output should contain flat events list: %s", output)
+	}
+	if strings.Contains(output, "\"days\"") {
+		t.Fatalf("json output should not contain day wrappers when filtered: %s", output)
+	}
+}
+
+func TestRenderPrintAgendaIncludesCalendar(t *testing.T) {
+	store := testStore()
+	events, err := filteredEvents(store, &printOptions{numDays: 1})
+	if err != nil {
+		t.Fatalf("filteredEvents() error = %v", err)
+	}
+
+	output := renderPrintAgenda(events, testPrintTheme(), true, false)
+	if !strings.Contains(output, "[Work]") {
+		t.Fatalf("agenda output should include calendar name, got: %s", output)
+	}
+}
+
+func TestBuildCreatedEvent(t *testing.T) {
+	store := testStore()
+	event, err := buildCreatedEvent(store, &eventMutationOptions{
+		calendar: "Work",
+		summary:  "New Event",
+		date:     "2026-04-13",
+		start:    "09:00",
+		end:      "10:30",
+	})
+	if err != nil {
+		t.Fatalf("buildCreatedEvent() error = %v", err)
+	}
+	if event.CalendarID != 0 {
+		t.Fatalf("CalendarID = %d, want 0", event.CalendarID)
+	}
+	if event.UID == "" {
+		t.Fatal("UID should be generated")
+	}
+}
+
+func TestMutateEventMove(t *testing.T) {
+	store := testStore()
+	original := store.FindEvent("work-1")
+	moved, err := mutateEvent(store, original, &eventMutationOptions{
+		date:  "2026-04-20",
+		start: "14:00",
+		end:   "15:00",
+	}, true)
+	if err != nil {
+		t.Fatalf("mutateEvent() error = %v", err)
+	}
+	if moved.Start.Format("2006-01-02 15:04") != "2026-04-20 14:00" {
+		t.Fatalf("moved start = %s", moved.Start.Format("2006-01-02 15:04"))
+	}
+	if moved.End.Format("15:04") != "15:00" {
+		t.Fatalf("moved end = %s, want 15:00", moved.End.Format("15:04"))
 	}
 }

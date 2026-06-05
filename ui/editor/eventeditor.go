@@ -94,8 +94,8 @@ func (ee *EventEditor) OpenCreate(date time.Time, calendarNames []string) {
 
 	fields := []components.FormField{
 		{Label: "Title", Type: components.FieldText, Placeholder: "Event title"},
-		{Label: "All Day", Type: components.FieldSelect, Options: []string{"No", "Yes"}},
-		{Label: "Date", Type: components.FieldText, Value: date.Format("2006-01-02")},
+		{Label: "All Day", Type: components.FieldCheckbox},
+		{Label: "Date", Type: components.FieldText, Value: date.Format("02.01.2006")},
 		{Label: "Start", Type: components.FieldText, Value: defaultStart.Format("15:04")},
 		{Label: "End", Type: components.FieldText, Value: defaultEnd.Format("15:04")},
 		{Label: "Location", Type: components.FieldText, Placeholder: "Location"},
@@ -104,12 +104,14 @@ func (ee *EventEditor) OpenCreate(date time.Time, calendarNames []string) {
 	}
 
 	ee.form = components.NewForm(ee.theme, "New Event", fields)
+	ee.syncAllDayVisibility()
 }
 
 // OpenEdit opens the editor in edit mode for an existing event.
 func (ee *EventEditor) OpenEdit(event *ical.Event, calendarNames []string) {
 	ee.mode = ModeEdit
 	ee.editingUID = event.UID
+	ee.date = event.Start
 	ee.active = true
 	ee.result = nil
 
@@ -137,8 +139,8 @@ func (ee *EventEditor) OpenEdit(event *ical.Event, calendarNames []string) {
 
 	fields := []components.FormField{
 		{Label: "Title", Type: components.FieldText, Value: event.Summary},
-		{Label: "All Day", Type: components.FieldSelect, Options: []string{"No", "Yes"}, Selected: allDaySelected},
-		{Label: "Date", Type: components.FieldText, Value: event.Start.Format("2006-01-02")},
+		{Label: "All Day", Type: components.FieldCheckbox, Selected: allDaySelected},
+		{Label: "Date", Type: components.FieldText, Value: event.Start.Format("02.01.2006")},
 		{Label: "Start", Type: components.FieldText, Value: event.Start.Format("15:04")},
 		{Label: "End", Type: components.FieldText, Value: event.End.Format("15:04")},
 		{Label: "Location", Type: components.FieldText, Value: event.Location},
@@ -147,6 +149,7 @@ func (ee *EventEditor) OpenEdit(event *ical.Event, calendarNames []string) {
 	}
 
 	ee.form = components.NewForm(ee.theme, "Edit Event", fields)
+	ee.syncAllDayVisibility()
 }
 
 // OpenDelete opens the delete confirmation modal.
@@ -225,6 +228,7 @@ func (ee *EventEditor) HandleMouse(x, y, containerHeight int) {
 	case ModeCreate, ModeEdit:
 		if ee.form != nil {
 			ee.form.HandleMouse(x, y, ee.width, containerHeight)
+			ee.syncAllDayVisibility()
 			if ee.form.IsSubmitted() {
 				event := ee.buildEventFromForm()
 				if ee.mode == ModeCreate {
@@ -314,6 +318,7 @@ func (ee *EventEditor) HandleKey(key string) {
 	switch ee.mode {
 	case ModeCreate, ModeEdit:
 		ee.form.HandleKey(key)
+		ee.syncAllDayVisibility()
 
 		if ee.form.IsSubmitted() {
 			event := ee.buildEventFromForm()
@@ -506,6 +511,17 @@ func (ee *EventEditor) formatJSON() string {
 	return string(b)
 }
 
+// syncAllDayVisibility hides or shows the Start/End time fields based on the
+// current All Day checkbox state (field index 1). Start=3, End=4.
+func (ee *EventEditor) syncAllDayVisibility() {
+	if ee.form == nil {
+		return
+	}
+	allDay := ee.form.Field(1) != nil && ee.form.Field(1).Selected == 1
+	ee.form.SetHidden(3, allDay)
+	ee.form.SetHidden(4, allDay)
+}
+
 func (ee *EventEditor) buildEventFromForm() *ical.Event {
 	fields := ee.form.Fields()
 
@@ -518,10 +534,14 @@ func (ee *EventEditor) buildEventFromForm() *ical.Event {
 	calIdx := fields[6].Selected
 	notes := fields[7].Value
 
-	// Parse date
-	date, err := time.Parse("2006-01-02", dateStr)
+	// Parse date — use ee.date as reference for partial inputs (DD or DD.MM).
+	ref := ee.date
+	if ref.IsZero() {
+		ref = time.Now()
+	}
+	date, err := util.ParseDate(dateStr, ref)
 	if err != nil {
-		date = time.Now()
+		date = ref
 	}
 
 	var startTime, endTime time.Time
@@ -529,20 +549,24 @@ func (ee *EventEditor) buildEventFromForm() *ical.Event {
 		startTime = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.Local)
 		endTime = startTime.AddDate(0, 0, 1)
 	} else {
-		start, err := time.Parse("15:04", startStr)
+		start, err := util.ParseTime(startStr)
 		if err != nil {
 			start = time.Date(0, 1, 1, 9, 0, 0, 0, time.Local)
 		}
-
-		end, err := time.Parse("15:04", endStr)
-		if err != nil {
-			end = time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)
-		}
-
 		startTime = time.Date(date.Year(), date.Month(), date.Day(),
 			start.Hour(), start.Minute(), 0, 0, time.Local)
-		endTime = time.Date(date.Year(), date.Month(), date.Day(),
-			end.Hour(), end.Minute(), 0, 0, time.Local)
+
+		// End field accepts either an absolute time or a "+duration" offset from start.
+		if t, ok := util.ParseDuration(endStr, startTime); ok {
+			endTime = t
+		} else {
+			end, err := util.ParseTime(endStr)
+			if err != nil {
+				end = time.Date(0, 1, 1, 10, 0, 0, 0, time.Local)
+			}
+			endTime = time.Date(date.Year(), date.Month(), date.Day(),
+				end.Hour(), end.Minute(), 0, 0, time.Local)
+		}
 	}
 
 	uid := ee.editingUID

@@ -15,6 +15,7 @@ const (
 	FieldText FormFieldType = iota
 	FieldTextArea
 	FieldSelect
+	FieldCheckbox
 )
 
 // FormField represents a single form field.
@@ -24,7 +25,8 @@ type FormField struct {
 	Placeholder string
 	Type        FormFieldType
 	Options     []string // for select fields
-	Selected    int      // for select fields
+	Selected    int      // for select/checkbox fields
+	Hidden      bool     // when true, field is not rendered and skipped in navigation
 }
 
 // fieldBound holds the inclusive row range of a field within the rendered form.
@@ -78,6 +80,18 @@ func (f *Form) Field(index int) *FormField {
 		return &f.fields[index]
 	}
 	return nil
+}
+
+// SetHidden hides or reveals a field. If the currently focused field is hidden,
+// focus advances to the next visible field.
+func (f *Form) SetHidden(index int, hidden bool) {
+	if index < 0 || index >= len(f.fields) {
+		return
+	}
+	f.fields[index].Hidden = hidden
+	if hidden && f.focused == index {
+		f.focusNext()
+	}
 }
 
 // IsSubmitted returns true if the form was submitted.
@@ -186,6 +200,10 @@ func (f *Form) HandleKey(key string) {
 			f.submitted = true
 			return
 		}
+		if f.fields[f.focused].Type == FieldCheckbox {
+			f.fields[f.focused].Selected ^= 1
+			return
+		}
 		if isTextArea {
 			// Insert newline
 			field := &f.fields[f.focused]
@@ -204,10 +222,29 @@ func (f *Form) HandleKey(key string) {
 	case "esc":
 		f.cancelled = true
 
+	case " ":
+		if f.focused < len(f.fields) {
+			field := &f.fields[f.focused]
+			if field.Type == FieldCheckbox {
+				field.Selected ^= 1
+				return
+			}
+			// Insert space for text fields
+			if field.Type != FieldSelect {
+				runes := []rune(field.Value)
+				newRunes := make([]rune, 0, len(runes)+1)
+				newRunes = append(newRunes, runes[:f.cursor]...)
+				newRunes = append(newRunes, ' ')
+				newRunes = append(newRunes, runes[f.cursor:]...)
+				field.Value = string(newRunes)
+				f.cursor++
+			}
+		}
+
 	case "backspace":
 		if f.focused < len(f.fields) {
 			field := &f.fields[f.focused]
-			if field.Type == FieldSelect {
+			if field.Type == FieldSelect || field.Type == FieldCheckbox {
 				return
 			}
 			if f.cursor > 0 {
@@ -268,9 +305,15 @@ func (f *Form) HandleKey(key string) {
 }
 
 func (f *Form) focusNext() {
-	f.focused++
-	if f.focused >= len(f.fields)+1 { // +1 for buttons
-		f.focused = 0
+	total := len(f.fields) + 1 // +1 for button row
+	for range total {
+		f.focused++
+		if f.focused >= total {
+			f.focused = 0
+		}
+		if f.focused >= len(f.fields) || !f.fields[f.focused].Hidden {
+			break
+		}
 	}
 	if f.focused < len(f.fields) {
 		f.cursor = len([]rune(f.fields[f.focused].Value))
@@ -278,9 +321,15 @@ func (f *Form) focusNext() {
 }
 
 func (f *Form) focusPrev() {
-	f.focused--
-	if f.focused < 0 {
-		f.focused = len(f.fields)
+	total := len(f.fields) + 1
+	for range total {
+		f.focused--
+		if f.focused < 0 {
+			f.focused = len(f.fields)
+		}
+		if f.focused >= len(f.fields) || !f.fields[f.focused].Hidden {
+			break
+		}
 	}
 	if f.focused < len(f.fields) {
 		f.cursor = len([]rune(f.fields[f.focused].Value))
@@ -333,6 +382,11 @@ func (f *Form) View() string {
 
 	f.fieldBounds = make([]fieldBound, len(f.fields))
 	for i, field := range f.fields {
+		if field.Hidden {
+			f.fieldBounds[i] = fieldBound{top: -1, bottom: -1}
+			continue
+		}
+
 		isFocused := i == f.focused
 
 		// Record the top row of this field. Content lines start at form row 1
@@ -340,6 +394,15 @@ func (f *Form) View() string {
 		topRow := len(lines) + 1
 
 		switch field.Type {
+		case FieldCheckbox:
+			label := labelStyle.Render(field.Label + ":")
+			input := f.renderCheckbox(field, isFocused)
+			lines = append(lines, label+input)
+			f.fieldBounds[i] = fieldBound{top: topRow, bottom: topRow}
+			if isFocused {
+				lines = append(lines, underlineLine)
+			}
+			lines = append(lines, "")
 		case FieldSelect:
 			label := labelStyle.Render(field.Label + ":")
 			input := f.renderSelect(field, inputWidth, isFocused)
@@ -457,6 +520,9 @@ func (f *Form) HandleMouse(x, y, containerWidth, containerHeight int) {
 	for i, bounds := range f.fieldBounds {
 		if localY >= bounds.top && localY <= bounds.bottom {
 			f.focused = i
+			if f.fields[i].Type == FieldCheckbox {
+				f.fields[i].Selected ^= 1
+			}
 			f.cursor = len([]rune(f.fields[i].Value))
 			return
 		}
@@ -555,6 +621,27 @@ func (f *Form) renderTextArea(field FormField, width int, focused bool, labelSty
 	}
 
 	return result
+}
+
+func (f *Form) renderCheckbox(field FormField, focused bool) string {
+	mark := " "
+	if field.Selected == 1 {
+		mark = "x"
+	}
+	indicator := fmt.Sprintf("[%s]", mark)
+
+	style := lipgloss.NewStyle().Padding(0, 1)
+	if focused {
+		style = style.
+			Background(f.theme.Surface).
+			Foreground(f.theme.Accent).
+			Bold(true)
+	} else {
+		style = style.
+			Background(f.theme.SurfaceAlt).
+			Foreground(f.theme.Text)
+	}
+	return style.Render(indicator)
 }
 
 func (f *Form) renderSelect(field FormField, width int, focused bool) string {
