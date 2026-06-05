@@ -24,6 +24,8 @@ func Execute() {
 		os.Exit(runCalendars(os.Args[2:]))
 	case "event":
 		os.Exit(runEvent(os.Args[2:]))
+	case "mcp":
+		os.Exit(runMCP(os.Args[2:]))
 	case "setup":
 		runSetup()
 	case "auth":
@@ -49,6 +51,7 @@ func printHelp() {
 	fmt.Println("  tipical agenda       Quick agenda view, optionally scoped to one calendar")
 	fmt.Println("  tipical calendars    List discovered calendars")
 	fmt.Println("  tipical event        Create, update, move, and delete events")
+	fmt.Println("  tipical mcp          Run an MCP server over stdio for AI clients")
 	fmt.Println("  tipical setup        Run the setup wizard")
 	fmt.Println("  tipical auth add     Add a new calendar")
 	fmt.Println("  tipical auth test    Test calendar connections")
