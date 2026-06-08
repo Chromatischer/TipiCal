@@ -417,6 +417,62 @@ func TestFormView(t *testing.T) {
 	}
 }
 
+func TestFormCheckboxOptionsClickable(t *testing.T) {
+	theme := testFormTheme()
+	fields := []FormField{
+		{Label: "All Day", Type: FieldCheckbox, Selected: 0},
+	}
+	form := NewForm(theme, "New Event", fields)
+	form.SetSize(50, 20)
+	form.View()
+
+	rowY := form.fieldBounds[0].top
+
+	allDayX := 2 + formLabelWidth + 9
+	form.HandleMouse(allDayX, rowY, form.renderedWidth, form.renderedHeight)
+	if fields[0].Selected != 1 {
+		t.Fatalf("clicking All Day option should select 1, got %d", fields[0].Selected)
+	}
+
+	timedX := 2 + formLabelWidth + 1
+	form.HandleMouse(timedX, rowY, form.renderedWidth, form.renderedHeight)
+	if fields[0].Selected != 0 {
+		t.Fatalf("clicking Timed option should select 0, got %d", fields[0].Selected)
+	}
+}
+
+func TestFormCheckboxOptionsClickableAtMinimumWidth(t *testing.T) {
+	theme := testFormTheme()
+	fields := []FormField{
+		{Label: "All Day", Type: FieldCheckbox, Selected: 0},
+	}
+	form := NewForm(theme, "New Event", fields)
+	form.SetSize(34, 20)
+	form.View()
+
+	rowY := form.fieldBounds[0].top
+	inputWidth := form.inputWidth()
+	pad := checkboxSegmentPadding(inputWidth)
+	offWidth := len("Timed") + 2*pad
+	onWidth := len("All Day") + 2*pad
+
+	allDayX := 2 + formLabelWidth + 1 + offWidth + 1
+	form.HandleMouse(allDayX, rowY, form.renderedWidth, form.renderedHeight)
+	if fields[0].Selected != 1 {
+		t.Fatalf("minimum-width All Day click should select 1, got %d", fields[0].Selected)
+	}
+
+	timedX := 2 + formLabelWidth + 1
+	form.HandleMouse(timedX, rowY, form.renderedWidth, form.renderedHeight)
+	if fields[0].Selected != 0 {
+		t.Fatalf("minimum-width Timed click should select 0, got %d", fields[0].Selected)
+	}
+
+	if offWidth+1+onWidth > inputWidth {
+		t.Fatalf("toggle width %d should fit inside input width %d", offWidth+1+onWidth, inputWidth)
+	}
+}
+
 func TestFormEnterOnTextFieldMovesToNext(t *testing.T) {
 	theme := testFormTheme()
 	fields := []FormField{

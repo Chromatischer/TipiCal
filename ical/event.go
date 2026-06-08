@@ -234,11 +234,48 @@ type CalendarInfo struct {
 type Store struct {
 	Events    []*Event
 	Calendars []CalendarInfo
+
+	// hiddenCalendars tracks which calendar IDs are hidden in UI views.
+	// nil means all calendars are visible.
+	hiddenCalendars map[int]bool
 }
 
 // NewStore creates an empty event store.
 func NewStore() *Store {
 	return &Store{}
+}
+
+// IsCalendarVisible returns true if events for the given calendar ID should be shown.
+func (s *Store) IsCalendarVisible(id int) bool {
+	if s.hiddenCalendars == nil {
+		return true
+	}
+	return !s.hiddenCalendars[id]
+}
+
+// SetCalendarVisible sets whether events for the given calendar ID are shown.
+func (s *Store) SetCalendarVisible(id int, visible bool) {
+	if visible {
+		if s.hiddenCalendars == nil {
+			return
+		}
+		delete(s.hiddenCalendars, id)
+		if len(s.hiddenCalendars) == 0 {
+			s.hiddenCalendars = nil
+		}
+		return
+	}
+	if s.hiddenCalendars == nil {
+		s.hiddenCalendars = make(map[int]bool)
+	}
+	s.hiddenCalendars[id] = true
+}
+
+// ToggleCalendarVisible flips the visibility for a calendar ID and returns the new visibility.
+func (s *Store) ToggleCalendarVisible(id int) bool {
+	visible := s.IsCalendarVisible(id)
+	s.SetCalendarVisible(id, !visible)
+	return !visible
 }
 
 // RegisterCalendar adds a calendar to the registry and returns its ID.
@@ -268,6 +305,9 @@ func (s *Store) EventsForDay(day time.Time) []*Event {
 
 	var result []*Event
 	for _, e := range s.Events {
+		if !s.IsCalendarVisible(e.CalendarID) {
+			continue
+		}
 		if e.AllDay {
 			// For all-day events, compare date components only to avoid
 			// timezone mismatches (all-day times are often in UTC while
@@ -293,6 +333,9 @@ func (s *Store) EventsForDay(day time.Time) []*Event {
 func (s *Store) EventsInRange(start, end time.Time) []*Event {
 	var result []*Event
 	for _, e := range s.Events {
+		if !s.IsCalendarVisible(e.CalendarID) {
+			continue
+		}
 		if e.OverlapsWith(start, end) {
 			result = append(result, e)
 		}

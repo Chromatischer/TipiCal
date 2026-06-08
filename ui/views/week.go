@@ -98,14 +98,71 @@ func (wv *WeekView) MoveDown() {
 
 // MoveLeft moves to previous day.
 func (wv *WeekView) MoveLeft() {
-	wv.selectedDay = wv.selectedDay.AddDate(0, 0, -1)
-	wv.rebuildGrid()
+	if wv.grid == nil {
+		wv.selectedDay = wv.selectedDay.AddDate(0, 0, -1)
+		wv.rebuildGrid()
+		return
+	}
+
+	refMinutes := wv.grid.VisibleStartHour() * 60
+	if ev := wv.grid.SelectedEvent(); ev != nil && !ev.AllDay {
+		// Keep focus near the selected event's visual start.
+		if util.SameDay(ev.Start, wv.selectedDay) {
+			refMinutes = ev.Start.Hour()*60 + ev.Start.Minute()
+		} else {
+			refMinutes = 7 * 60
+		}
+	}
+
+	newDay := wv.selectedDay.AddDate(0, 0, -1)
+	oldWeekStart := util.WeekStart(wv.selectedDay, wv.startMonday)
+	newWeekStart := util.WeekStart(newDay, wv.startMonday)
+	oldScroll := wv.grid.ScrollY()
+
+	wv.selectedDay = newDay
+	if !util.SameDay(oldWeekStart, newWeekStart) {
+		wv.rebuildGrid()
+		wv.grid.SetScrollY(oldScroll)
+	} else {
+		wv.grid.SetSelectedDay(newDay)
+	}
+
+	wv.grid.SetSelectedDay(newDay)
+	wv.grid.SelectClosestEvent(refMinutes)
 }
 
 // MoveRight moves to next day.
 func (wv *WeekView) MoveRight() {
-	wv.selectedDay = wv.selectedDay.AddDate(0, 0, 1)
-	wv.rebuildGrid()
+	if wv.grid == nil {
+		wv.selectedDay = wv.selectedDay.AddDate(0, 0, 1)
+		wv.rebuildGrid()
+		return
+	}
+
+	refMinutes := wv.grid.VisibleStartHour() * 60
+	if ev := wv.grid.SelectedEvent(); ev != nil && !ev.AllDay {
+		if util.SameDay(ev.Start, wv.selectedDay) {
+			refMinutes = ev.Start.Hour()*60 + ev.Start.Minute()
+		} else {
+			refMinutes = 7 * 60
+		}
+	}
+
+	newDay := wv.selectedDay.AddDate(0, 0, 1)
+	oldWeekStart := util.WeekStart(wv.selectedDay, wv.startMonday)
+	newWeekStart := util.WeekStart(newDay, wv.startMonday)
+	oldScroll := wv.grid.ScrollY()
+
+	wv.selectedDay = newDay
+	if !util.SameDay(oldWeekStart, newWeekStart) {
+		wv.rebuildGrid()
+		wv.grid.SetScrollY(oldScroll)
+	} else {
+		wv.grid.SetSelectedDay(newDay)
+	}
+
+	wv.grid.SetSelectedDay(newDay)
+	wv.grid.SelectClosestEvent(refMinutes)
 }
 
 // View renders the week view.

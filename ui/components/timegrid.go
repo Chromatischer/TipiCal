@@ -29,6 +29,28 @@ type TimeGrid struct {
 	selectedEventIdx int
 }
 
+// ScrollY returns the current vertical scroll offset (in hours).
+func (tg *TimeGrid) ScrollY() int {
+	return tg.scrollY
+}
+
+// SetScrollY sets the vertical scroll offset (in hours) and clamps it.
+func (tg *TimeGrid) SetScrollY(y int) {
+	maxScroll := tg.maxScrollY()
+	if y < 0 {
+		y = 0
+	}
+	if y > maxScroll {
+		y = maxScroll
+	}
+	tg.scrollY = y
+}
+
+// VisibleStartHour returns the hour currently at the top of the visible grid.
+func (tg *TimeGrid) VisibleStartHour() int {
+	return tg.startHour + tg.scrollY
+}
+
 // NewTimeGrid creates a new time grid.
 func NewTimeGrid(theme *config.Theme, days []time.Time, store *ical.Store, use24h bool) *TimeGrid {
 	events := make(map[string][]*ical.Event)
@@ -143,16 +165,86 @@ func (tg *TimeGrid) scrollToSelectedEvent() {
 	}
 
 	// Clamp scrollY
-	maxScroll := (tg.endHour - tg.startHour) - visibleHours
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := tg.maxScrollYWithVisibleHours(visibleHours)
 	if tg.scrollY < 0 {
 		tg.scrollY = 0
 	}
 	if tg.scrollY > maxScroll {
 		tg.scrollY = maxScroll
 	}
+}
+
+func (tg *TimeGrid) maxScrollY() int {
+	rph := tg.rowsPerHour()
+	headerLines := 2 + tg.allDayRowCount()
+	availableRows := tg.height - headerLines
+	if availableRows < 1 {
+		availableRows = 1
+	}
+	visibleHours := availableRows / rph
+	if visibleHours < 1 {
+		visibleHours = 1
+	}
+	return tg.maxScrollYWithVisibleHours(visibleHours)
+}
+
+func (tg *TimeGrid) maxScrollYWithVisibleHours(visibleHours int) int {
+	maxScroll := (tg.endHour - tg.startHour) - visibleHours
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
+}
+
+// SelectClosestEvent selects the event in the currently selected day whose
+// displayed start time is closest to refMinutes (minutes since midnight).
+// If there are no timed events, it falls back to the first event (e.g. all-day).
+func (tg *TimeGrid) SelectClosestEvent(refMinutes int) {
+	key := tg.selected.Format("2006-01-02")
+	dayEvents := tg.events[key]
+	if len(dayEvents) == 0 {
+		tg.selectedEventIdx = -1
+		return
+	}
+
+	dayStart := time.Date(tg.selected.Year(), tg.selected.Month(), tg.selected.Day(), 0, 0, 0, 0, tg.selected.Location())
+	dayEnd := dayStart.AddDate(0, 0, 1)
+
+	bestIdx := -1
+	bestDiff := 0
+	bestStart := 0
+	for i, e := range dayEvents {
+		if e.AllDay {
+			continue
+		}
+		startMin := tg.eventEffectiveStartMinutes(e, tg.selected, dayStart, dayEnd)
+		diff := startMin - refMinutes
+		if diff < 0 {
+			diff = -diff
+		}
+		if bestIdx == -1 || diff < bestDiff || (diff == bestDiff && startMin < bestStart) {
+			bestIdx = i
+			bestDiff = diff
+			bestStart = startMin
+		}
+	}
+
+	if bestIdx == -1 {
+		bestIdx = 0
+	}
+	tg.selectedEventIdx = bestIdx
+	tg.scrollToSelectedEvent()
+}
+
+func (tg *TimeGrid) eventEffectiveStartMinutes(e *ical.Event, day, dayStart, dayEnd time.Time) int {
+	if util.SameDay(e.Start, day) {
+		return e.Start.Hour()*60 + e.Start.Minute()
+	}
+	// Multi-day timed event: it renders at the top of the grid on subsequent days.
+	if e.OverlapsWith(dayStart, dayEnd) {
+		return tg.startHour * 60
+	}
+	return e.Start.Hour()*60 + e.Start.Minute()
 }
 
 // SetSize sets the grid dimensions.

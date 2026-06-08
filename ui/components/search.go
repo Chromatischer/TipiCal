@@ -110,6 +110,9 @@ func (s *Search) search() {
 	s.results = nil
 
 	for _, e := range s.store.Events {
+		if !s.store.IsCalendarVisible(e.CalendarID) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(e.Summary), queryLower) ||
 			strings.Contains(strings.ToLower(e.Location), queryLower) ||
 			strings.Contains(strings.ToLower(e.Description), queryLower) {

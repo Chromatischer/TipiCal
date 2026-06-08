@@ -415,17 +415,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		// Event management
-		case "n":
-			a.eventEditor.OpenCreate(a.activeView().SelectedDate(), a.calendarNames())
-			a.eventEditor.SetSize(a.width, a.height-3)
+			case "n":
+				a.eventEditor.OpenCreate(a.activeView().SelectedDate(), a.calendarNames())
+				a.eventEditor.SetSize(a.width, a.height-4)
 
 		case "e":
 			if event := a.selectedEvent(); event != nil {
 				if a.isReadOnly(event) {
 					a.statusbar.SetMessage("Calendar is read-only")
 				} else {
-					a.eventEditor.OpenEdit(event, a.calendarNames())
-					a.eventEditor.SetSize(a.width, a.height-3)
+						a.eventEditor.OpenEdit(event, a.calendarNames())
+						a.eventEditor.SetSize(a.width, a.height-4)
 				}
 			} else {
 				a.statusbar.SetMessage("No event selected")
@@ -436,8 +436,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.isReadOnly(event) {
 					a.statusbar.SetMessage("Calendar is read-only")
 				} else {
-					a.eventEditor.OpenDelete(event)
-					a.eventEditor.SetSize(a.width, a.height-3)
+						a.eventEditor.OpenDelete(event)
+						a.eventEditor.SetSize(a.width, a.height-4)
 				}
 			} else {
 				a.statusbar.SetMessage("No event selected")
@@ -450,8 +450,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if event := a.selectedEvent(); event != nil {
 				calName := a.store.CalendarName(event.CalendarID)
-				a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
-				a.eventEditor.SetSize(a.width, a.height-3)
+					a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
+					a.eventEditor.SetSize(a.width, a.height-4)
 			}
 
 		// Search
@@ -534,13 +534,13 @@ func (a *App) handleEditorResult(result *editor.EditorResult) tea.Cmd {
 		}
 	case "edit-from-detail":
 		if result.Event != nil {
-			a.eventEditor.OpenEdit(result.Event, a.calendarNames())
-			a.eventEditor.SetSize(a.width, a.height-3)
+				a.eventEditor.OpenEdit(result.Event, a.calendarNames())
+				a.eventEditor.SetSize(a.width, a.height-4)
 		}
 	case "delete-from-detail":
 		if result.Event != nil {
-			a.eventEditor.OpenDelete(result.Event)
-			a.eventEditor.SetSize(a.width, a.height-3)
+				a.eventEditor.OpenDelete(result.Event)
+				a.eventEditor.SetSize(a.width, a.height-4)
 		}
 	case "cancel":
 		a.statusbar.SetMessage("")
@@ -615,15 +615,15 @@ func (a *App) handleMouseClick(x, y int) tea.Cmd {
 			a.activeView().SetDate(time.Now())
 			a.syncDateToHeader()
 		case "new":
-			a.eventEditor.OpenCreate(a.activeView().SelectedDate(), a.calendarNames())
-			a.eventEditor.SetSize(a.width, a.height-3)
+				a.eventEditor.OpenCreate(a.activeView().SelectedDate(), a.calendarNames())
+				a.eventEditor.SetSize(a.width, a.height-4)
 		case "edit":
 			if event := a.selectedEvent(); event != nil {
 				if a.isReadOnly(event) {
 					a.statusbar.SetMessage("Calendar is read-only")
 				} else {
-					a.eventEditor.OpenEdit(event, a.calendarNames())
-					a.eventEditor.SetSize(a.width, a.height-3)
+						a.eventEditor.OpenEdit(event, a.calendarNames())
+						a.eventEditor.SetSize(a.width, a.height-4)
 				}
 			}
 		case "delete":
@@ -631,8 +631,8 @@ func (a *App) handleMouseClick(x, y int) tea.Cmd {
 				if a.isReadOnly(event) {
 					a.statusbar.SetMessage("Calendar is read-only")
 				} else {
-					a.eventEditor.OpenDelete(event)
-					a.eventEditor.SetSize(a.width, a.height-3)
+						a.eventEditor.OpenDelete(event)
+						a.eventEditor.SetSize(a.width, a.height-4)
 				}
 			}
 		case "search":
@@ -662,6 +662,20 @@ func (a *App) handleMouseClick(x, y int) tea.Cmd {
 
 	// Sidebar click
 	if a.showSidebar && x < 25 {
+		if calID, ok := a.sidebar.HitTestCalendar(x, contentY); ok {
+			visible := a.store.ToggleCalendarVisible(calID)
+			a.refreshTimeGridViews()
+			name := a.store.CalendarName(calID)
+			if name == "" {
+				name = fmt.Sprintf("calendar %d", calID)
+			}
+			if visible {
+				a.statusbar.SetMessage("Showing " + name)
+			} else {
+				a.statusbar.SetMessage("Hiding " + name)
+			}
+			return nil
+		}
 		if date, ok := a.sidebar.HitTestDate(x, contentY); ok {
 			a.activeView().SetDate(date)
 			a.syncDateToHeader()
@@ -708,8 +722,8 @@ func (a *App) handleTimeGridClick(
 			setDay(day)
 			selectUID(event.UID)
 			calName := a.store.CalendarName(event.CalendarID)
-			a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
-			a.eventEditor.SetSize(a.width, a.height-3)
+				a.eventEditor.OpenDetail(event, calName, a.cfg.Use24h())
+				a.eventEditor.SetSize(a.width, a.height-4)
 		}
 	case "day-header":
 		if !day.IsZero() {
