@@ -66,6 +66,54 @@ tipical auth test     # Test calendar connections
 
 ![Event Editor](docs/images/editor.png)
 
+### Command-line access
+
+Beyond the TUI, events can be inspected and managed directly from the shell.
+These commands sync with your CalDAV servers and operate on the same cache the
+app uses.
+
+```bash
+tipical calendars                       # List synced calendars with their ids
+tipical events list --days 7            # List the next 7 days of events
+tipical events list --from 2026-07-01 --to 2026-07-08 --calendar Privat
+tipical events list --search standup --json
+tipical events show --uid <UID>         # Show full details of one event
+tipical events add --calendar Privat --title "Lunch" \
+  --start "2026-07-01 12:00" --end "2026-07-01 13:00" --location "Cafe Roma"
+tipical events add --calendar Privat --title "Holiday" --start 2026-07-04 --all-day
+tipical events delete --uid <UID>       # Remove an event
+```
+
+Dates use `YYYY-MM-DD` for all-day boundaries or `"YYYY-MM-DD HH:MM"` for timed
+events, interpreted in your local timezone. `--calendar` accepts a calendar
+name or the numeric id shown by `tipical calendars`.
+
+### MCP server
+
+TipiCal can run as a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio, exposing your calendars to LLM agents such as Claude Desktop
+or Claude Code:
+
+```bash
+tipical mcp
+```
+
+It is launched by an MCP client rather than run interactively. Add it to your
+client configuration:
+
+```json
+{
+  "mcpServers": {
+    "tipical": { "command": "tipical", "args": ["mcp"] }
+  }
+}
+```
+
+The server provides read tools (`list_calendars`, `list_events`,
+`search_events`, `get_event`) that serve from the local store, and write tools
+(`create_event`, `update_event`, `delete_event`) that change the real CalDAV
+calendars. Read-only calendars are rejected by the write tools.
+
 ## Keybindings
 
 | Key | Action |

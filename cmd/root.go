@@ -22,6 +22,12 @@ func Execute() {
 		runSetup()
 	case "auth":
 		handleAuth()
+	case "events", "event":
+		handleEvents(os.Args[2:])
+	case "calendars", "calendar", "cals":
+		handleCalendars(os.Args[2:])
+	case "mcp":
+		runMCP(os.Args[2:])
 	case "help", "--help", "-h":
 		printHelp()
 	case "version", "--version", "-v":
@@ -44,6 +50,12 @@ func printHelp() {
 	fmt.Println("  tipical auth add     Add a new calendar")
 	fmt.Println("  tipical auth test    Test calendar connections")
 	fmt.Println("  tipical auth list    List configured calendars")
+	fmt.Println("  tipical calendars    List synced calendars (with ids)")
+	fmt.Println("  tipical events list  List events in a date range")
+	fmt.Println("  tipical events add   Create an event")
+	fmt.Println("  tipical events show  Show an event by UID")
+	fmt.Println("  tipical events delete Delete an event by UID")
+	fmt.Println("  tipical mcp          Run the MCP server (stdio)")
 	fmt.Println("  tipical version      Show version")
 	fmt.Println("  tipical help         Show this help message")
 	fmt.Println()
